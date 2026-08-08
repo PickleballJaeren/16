@@ -202,6 +202,11 @@ export async function hentKamperForFase(eventId, fase) {
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
 }
 
+export function lyttKamperForFase(eventId, fase, cb) {
+  const q = query(collection(db, EVENTS, eventId, 'kamper'), where('fase', '==', fase), limit(30));
+  return onSnapshot(q, (snap) => cb(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+}
+
 /**
  * Skriver et helt generert (og allerede validert av kampgenerator.js) kampoppsett
  * for puljespillet i én batch, og markerer eventet som klart for hovedeventet.
@@ -242,6 +247,16 @@ export async function startTimer(eventId, kampId, varighetSek) {
   await updateDoc(doc(db, EVENTS, eventId, 'kamper', kampId), {
     status: 'active',
     timer: { status: 'running', startetAt: serverTimestamp(), gjenstaendeSekunder: varighetSek },
+  });
+}
+
+/** Gjenopptar en PAUSET timer uten å nullstille gjenstående tid (i motsetning til startTimer). */
+export async function gjenopptaTimer(eventId, kampId, gjenstaendeSekunder) {
+  await updateDoc(doc(db, EVENTS, eventId, 'kamper', kampId), {
+    status: 'active',
+    'timer.status': 'running',
+    'timer.startetAt': serverTimestamp(),
+    'timer.gjenstaendeSekunder': gjenstaendeSekunder,
   });
 }
 
@@ -374,6 +389,17 @@ export async function settAktivtEvent(eventId, gjeldendeRunde, sluttspillFase) {
   await setDoc(doc(db, LIVE, 'aktivEvent'), {
     eventId, gjeldendeRunde, sluttspillFase, oppdatert: serverTimestamp(),
   });
+}
+
+export function lyttAktivtEvent(cb) {
+  return onSnapshot(doc(db, LIVE, 'aktivEvent'), (snap) => {
+    cb(snap.exists() ? snap.data() : null);
+  });
+}
+
+/** Setter qualifiedForNext=true på event-rosterdokumentet — kalles når topp 2 fra hver pulje er avklart. */
+export async function markerRosterKvalifisert(eventId, spillerId) {
+  await updateDoc(doc(db, EVENTS, eventId, 'spillere', spillerId), { qualifiedForNext: true });
 }
 
 // ----------------------------------------------------------------------------

@@ -239,6 +239,10 @@ async function gaTilStatus(tilStatus) {
   await repo.oppdaterEventStatus(state.event.id, tilStatus);
   toast('Status oppdatert.');
 
+  if (tilStatus === 'main_event') {
+    state.gjeldendeRundeVisning = 1;
+    await repo.settAktivtEvent(state.event.id, 1, 'none');
+  }
   if (tilStatus === 'playoffs') {
     await settOppKvartfinaler();
   }
@@ -382,8 +386,12 @@ async function lastKamperTab() {
     `<button class="tab-pill ${r === state.gjeldendeRundeVisning ? 'active' : ''}" data-runde="${r}">Runde ${r}</button>`
   ).join('');
   $$('#runde-tabs .tab-pill').forEach(btn => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', async () => {
       state.gjeldendeRundeVisning = Number(btn.dataset.runde);
+      if (state.event.status === 'main_event') {
+        await repo.oppdaterEventFelt(state.event.id, { gjeldendeRunde: state.gjeldendeRundeVisning });
+        await repo.settAktivtEvent(state.event.id, state.gjeldendeRundeVisning, 'none');
+      }
       lastKamperTab();
     });
   });
@@ -467,8 +475,12 @@ function bindKampKort(k) {
   if (!kort) return;
   const navnMap = Object.fromEntries(state.roster.map(r => [r.id, r.navn]));
 
-  kort.querySelector('.timer-start')?.addEventListener('click', () =>
-    repo.startTimer(state.event.id, k.id, KAMPVARIGHET_PULJESPILL_MIN * 60).then(() => toast('Timer startet.')));
+  kort.querySelector('.timer-start')?.addEventListener('click', () => {
+    const gjor = k.timer?.status === 'paused'
+      ? repo.gjenopptaTimer(state.event.id, k.id, k.timer.gjenstaendeSekunder ?? KAMPVARIGHET_PULJESPILL_MIN * 60)
+      : repo.startTimer(state.event.id, k.id, KAMPVARIGHET_PULJESPILL_MIN * 60);
+    gjor.then(() => toast(k.timer?.status === 'paused' ? 'Timer gjenopptatt.' : 'Timer startet.'));
+  });
   kort.querySelector('.timer-pause')?.addEventListener('click', () =>
     repo.pauseTimer(state.event.id, k.id, k.timer?.gjenstaendeSekunder ?? 0).then(() => toast('Timer pauset.')));
   kort.querySelector('.timer-reset')?.addEventListener('click', () =>
@@ -548,7 +560,14 @@ async function settOppKvartfinaler() {
   const leaderboards = await repo.hentAlleLeaderboards(state.event.id);
   const rangeringPerPulje = Object.fromEntries(leaderboards.map(lb => [lb.puljeId, lb.rangering]));
   const kvartfinaler = logikk.genererKvartfinaleOppsett(rangeringPerPulje);
+
+  const kvalifiserte = logikk.bestemKvalifiserte(rangeringPerPulje);
+  for (const s of kvalifiserte) {
+    await repo.markerRosterKvalifisert(state.event.id, s.spillerId);
+  }
+
   await repo.oppdaterEventFelt(state.event.id, { sluttspillFase: 'quarterfinal' });
+  await repo.settAktivtEvent(state.event.id, state.event.gjeldendeRunde, 'quarterfinal');
   for (const qf of kvartfinaler) {
     await repo.leggTilSluttspillKamp(state.event.id, {
       runde: 5, fase: 'quarterfinal', serieId: qf.id, kampNrISerie: 1,
@@ -651,6 +670,7 @@ function visGaVidereKnapp(fase, serier) {
     }
     const nesteFase = logikk.nesteSluttspillFase(fase);
     await repo.oppdaterEventFelt(state.event.id, { sluttspillFase: nesteFase });
+    await repo.settAktivtEvent(state.event.id, state.event.gjeldendeRunde, nesteFase);
 
     if (nesteFase === 'semifinal') {
       const semis = logikk.genererSemifinaleOppsett(vinnere);
@@ -690,7 +710,7 @@ async function lastLeaderboardTab() {
       <h2>Pulje ${lb.puljeId}</h2>
       ${lb.rangering.map((r, i) => `
         <div class="list-row">
-          <span>#${i + 1} ${escapeHtml(r.navn)} ${r.qualifisert ? '<span class="badge badge-active">QUALIFIED</span>' : ''}</span>
+          <span>#${i + 1} ${escapeHtml(r.navn)} ${i < 2 ? '<span class="badge badge-active">QUALIFIED</span>' : ''}</span>
           <span class="mono muted2">${r.seire}S ${r.tap}T · ${r.poeng}p · ${r.poengforskjell > 0 ? '+' : ''}${r.poengforskjell}</span>
         </div>
       `).join('')}

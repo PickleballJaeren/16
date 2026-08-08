@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>16 — Courts</title>
+<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#050f1f">
+<style>
+  .court-card { position: relative; overflow: hidden; }
+  .court-card::before {
+    content: ''; position: absolute; top: 0; left: 0; right: 0; height: 4px;
+  }
+  .court-pickleball::before { background: var(--accent2); }
+  .court-skyball::before { background: var(--green2); }
+  .court-speedminton::before { background: var(--orange); }
+  .court-timer { font-size: 40px; text-align: center; margin: 10px 0; }
+  .court-timer.warning { color: var(--yellow); }
+  .court-timer.sudden-death { color: var(--red2); }
+  .court-players { display: flex; justify-content: space-between; align-items: center; font-size: 19px; margin: 8px 0; }
+  .court-next { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); font-size: 13px; }
+</style>
+</head>
+<body>
+
+<div id="offline-indicator" class="offline-indicator" hidden>Ingen tilkobling.</div>
+
+<div class="app-shell">
+  <div style="text-align:center; margin-bottom:14px;">
+    <h1 class="yellow-text">Courts</h1>
+    <p class="muted2 mono" id="courts-runde-info">—</p>
+  </div>
+  <div id="courts-rot"></div>
+  <p style="text-align:center; margin-top:20px;">
+    <a href="index.html" class="muted" style="font-size:12px; text-decoration:none;">← Tilbake</a>
+  </p>
+</div>
+
+<script type="module" src="courts.js"></script>
+</body>
+</html>

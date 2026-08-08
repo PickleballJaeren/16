@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>16</title>
+<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#050f1f">
+</head>
+<body>
+
+<div id="offline-indicator" class="offline-indicator" hidden>Ingen tilkobling.</div>
+
+<div class="app-shell">
+  <div style="text-align:center; margin-bottom:10px;">
+    <h1 id="hjem-eventnavn" class="yellow-text">16</h1>
+    <p class="muted2" id="hjem-tagline">3 disipliner. 1 mester.</p>
+  </div>
+
+  <div class="card" style="text-align:center;">
+    <p class="muted" style="font-size:12px; text-transform:uppercase; letter-spacing:1px;">Status</p>
+    <h2 id="hjem-status-badge" class="accent-text">—</h2>
+    <p id="hjem-event-navn" class="muted2" style="margin:0;"></p>
+    <p id="hjem-runde-info" class="mono muted2" style="margin-top:6px;"></p>
+  </div>
+
+  <div class="btn-row" style="margin-bottom:18px;">
+    <a href="courts.html" style="flex:1; text-decoration:none;"><button class="btn btn-outline">Courts</button></a>
+    <a href="hall-of-fame.html" style="flex:1; text-decoration:none;"><button class="btn btn-outline">Hall of Fame</button></a>
+  </div>
+
+  <h2>Leaderboard</h2>
+  <div id="leaderboard-rot"></div>
+
+  <p style="text-align:center; margin-top:30px;">
+    <a href="admin.html" class="muted" style="font-size:12px; text-decoration:none;">Admin</a>
+  </p>
+</div>
+
+<div id="toast-rot"></div>
+
+<script type="module" src="home.js"></script>
+</body>
+</html>
