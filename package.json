@@ -1,0 +1,9 @@
+{
+  "name": "seksten-app",
+  "private": true,
+  "type": "module",
+  "description": "Ingen byggeavhengigheter for selve appen (ren JS/HTML/CSS, ingen bundler). Denne filen finnes kun så 'node kampgenerator.test.js' kan kjøre ES module-syntaks lokalt/i CI.",
+  "scripts": {
+    "test": "node kampgenerator.test.js"
+  }
+}
