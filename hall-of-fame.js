@@ -7,6 +7,14 @@ import * as repo from './firestore-repo.js';
 
 const $ = (sel) => document.querySelector(sel);
 
+function oppdaterOfflineIndikator() {
+  const el = $('#offline-indicator');
+  if (el) el.hidden = navigator.onLine;
+}
+window.addEventListener('online', oppdaterOfflineIndikator);
+window.addEventListener('offline', oppdaterOfflineIndikator);
+oppdaterOfflineIndikator();
+
 let startet = false;
 paAuthEndring(({ bruker }) => {
   if (bruker && !startet) { startet = true; start(); }

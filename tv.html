@@ -7,6 +7,9 @@
 <link rel="stylesheet" href="styles.css">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap">
 <meta name="theme-color" content="#050f1f">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/png" href="favicon-32.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <style>
   html, body { height: 100%; overflow: hidden; }
   body { display: flex; flex-direction: column; }
@@ -72,6 +75,8 @@
 </head>
 <body>
 
+<div id="offline-indicator" class="offline-indicator" hidden>Ingen tilkobling — viser sist kjente data.</div>
+
 <div class="tv-shell">
   <div class="tv-header">
     <h1 id="tv-eventnavn">16</h1>
@@ -124,6 +129,7 @@
 
 <button class="fullscreen-btn" id="fullscreen-btn">⛶ Fullskjerm</button>
 
+<script src="register-sw.js"></script>
 <script type="module" src="tv.js"></script>
 </body>
 </html>

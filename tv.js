@@ -21,6 +21,14 @@ import { lyttAlleLeaderboards, beregnGjenstaendeSekunder, formaterTid } from './
 
 const $ = (sel) => document.querySelector(sel);
 
+function oppdaterOfflineIndikator() {
+  const el = $('#offline-indicator');
+  if (el) el.hidden = navigator.onLine;
+}
+window.addEventListener('online', oppdaterOfflineIndikator);
+window.addEventListener('offline', oppdaterOfflineIndikator);
+oppdaterOfflineIndikator();
+
 const ALLE_BANER = ['Pickleball 1', 'Pickleball 2', 'Skyball 1', 'Skyball 2', 'Speedminton 1', 'Speedminton 2'];
 const DISIPLIN_KLASSE = { pickleball: 'disiplin-pickleball', skyball: 'disiplin-skyball', speedminton: 'disiplin-speedminton' };
 const ROTASJON_INTERVALL_MS = 12000;
