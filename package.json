@@ -6,7 +6,7 @@
   "engines": { "node": "20" },
   "description": "Flat struktur — ingen undermapper. Denne ene package.json-filen brukes til to ting: (1) å kjøre enhetstestene lokalt med node, og (2) som Cloud Functions-pakken når verifyAdminPin (index.js) deployes — se firebase.json, der functions.source peker til repo-roten (\".\") i stedet for en egen functions/-mappe. Selve PWA-en (admin.html osv.) trenger ingen bundler eller avhengigheter i det hele tatt.",
   "scripts": {
-    "test": "node kampgenerator.test.js && node eventlogikk.test.js"
+    "test": "node kampgenerator.test.js && node eventlogikk.test.js && node full-gjennomkjoring.test.js"
   },
   "dependencies": {
     "firebase-admin": "^12.0.0",

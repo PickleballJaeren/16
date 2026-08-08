@@ -40,6 +40,7 @@ const APP_SHELL = [
   './public-repo.js',
   './eventlogikk.js',
   './kampgenerator.js',
+  './testdata.js',
   './manifest.json',
   './icon-192.png',
   './icon-512.png',

@@ -6,6 +6,7 @@ import { paAuthEndring, loggInnSomAdmin } from './auth.js';
 import * as repo from './firestore-repo.js';
 import * as logikk from './eventlogikk.js';
 import { genererKampoppsett } from './kampgenerator.js';
+import { TESTSPILLERE, TESTPULJER } from './testdata.js';
 
 const DISIPLINER = ['pickleball', 'skyball', 'speedminton'];
 const BANER = {
@@ -156,6 +157,56 @@ $('#opprett-event-btn').addEventListener('click', async () => {
   });
   toast('Event opprettet.');
   await lastEventTab();
+});
+
+$('#last-testdata-btn').addEventListener('click', async () => {
+  if (!bekreft('Opprette et testevent med 16 testspillere, ferdig fordelt i 4 puljer? Dette oppretter ekte dokumenter i Firestore (tydelig merket som testdata).')) return;
+
+  $('#last-testdata-btn').disabled = true;
+  try {
+    toast('Oppretter testspillere …');
+    const idKart = {}; // testdata.js sin id (f.eks. "p1") -> ekte Firestore-spillerId
+    for (const s of TESTSPILLERE) {
+      const spillerId = await repo.opprettSpiller({ navn: `${s.navn} (test)`, farge: initialFarge(s.navn) });
+      idKart[s.id] = spillerId;
+    }
+
+    toast('Oppretter testevent …');
+    const { id: eventId } = await repo.opprettEvent({
+      navn: '16 — Testevent', dato: new Date().toISOString().slice(0, 10),
+      config: {
+        antallPuljer: 4, spillerePerPulje: 4,
+        kampVarighetPuljespillMin: KAMPVARIGHET_PULJESPILL_MIN, kampVarighetSluttspillMin: 6,
+        disipliner: DISIPLINER, baner: Object.values(BANER).flat(),
+      },
+    });
+
+    toast('Legger spillere i roster …');
+    for (const s of TESTSPILLERE) {
+      await repo.leggTilIRoster(eventId, idKart[s.id], {
+        navn: `${s.navn} (test)`,
+        kvalifiseringsstatusKilde: s.kvalifiseringsstatusKilde,
+        wildcardBegrunnelse: s.wildcardBegrunnelse,
+      });
+    }
+
+    toast('Trekker puljer …');
+    const puljer = TESTPULJER.map(p => ({ id: p.id, navn: p.navn, spillerIds: p.spillerIds.map(sid => idKart[sid]) }));
+    await repo.lagrePuljer(eventId, puljer);
+    for (const p of puljer) {
+      for (const spillerId of p.spillerIds) {
+        await repo.flyttSpillerTilPulje(eventId, spillerId, p.id);
+      }
+    }
+
+    toast('Testdata lastet inn! Åpne Spillere-fanen for å se rosteret.');
+    await lastEventTab();
+  } catch (e) {
+    console.error(e);
+    toast('Kunne ikke laste inn testdata: ' + e.message, 'error');
+  } finally {
+    $('#last-testdata-btn').disabled = false;
+  }
 });
 
 function renderEventStatus(event) {

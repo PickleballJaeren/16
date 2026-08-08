@@ -14,6 +14,7 @@
       "index.js",
       "kampgenerator.test.js",
       "eventlogikk.test.js",
+      "full-gjennomkjoring.test.js",
       "datamodell.md",
       "firestore.rules"
     ]
