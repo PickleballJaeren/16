@@ -17,12 +17,12 @@ import {
 import { getFunctions } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-functions.js";
 
 const firebaseConfig = {
-  apiKey: "LIM_INN_SAMME_SOM_DE_ANDRE_APPENE",
-  authDomain: "LIM_INN_SAMME_SOM_DE_ANDRE_APPENE",
-  projectId: "LIM_INN_SAMME_SOM_DE_ANDRE_APPENE",
-  storageBucket: "LIM_INN_SAMME_SOM_DE_ANDRE_APPENE",
-  messagingSenderId: "LIM_INN_SAMME_SOM_DE_ANDRE_APPENE",
-  appId: "LIM_INN_SAMME_SOM_DE_ANDRE_APPENE",
+  apiKey: "AIzaSyB_0rxDzHpV2HB6JdHm8SEHoGc8vE2F_rE",
+  authDomain: "pickle-rank-5fbe5.firebaseapp.com",
+  projectId: "pickle-rank-5fbe5",
+  storageBucket: "pickle-rank-5fbe5.firebasestorage.app",
+  messagingSenderId: "761601873916",
+  appId: "1:761601873916:web:f3c13d21e809658fd80479",
 };
 
 export const app = initializeApp(firebaseConfig);
