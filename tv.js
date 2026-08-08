@@ -172,7 +172,7 @@ function renderCourtsSlide() {
 
     return `
       <div class="tv-court ${klasse}" data-kamp-id="${kamp.id}" data-timer-status="${kamp.timer?.status ?? ''}">
-        <p class="tv-court-navn">${bane}</p>
+        <p class="tv-court-navn">${kamp.status === 'active' ? '<span class="live-dot"></span>' : ''}${bane}</p>
         <div class="tv-court-spillere">
           <span>${escapeHtml(kamp.spillerANavn ?? kamp.spillerA)}</span>
           <span>${escapeHtml(kamp.spillerBNavn ?? kamp.spillerB)}</span>

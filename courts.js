@@ -96,7 +96,7 @@ function kampKortHtml(bane, kamp, neste) {
   return `
     <div class="card court-card ${klasse}">
       <div class="list-row" style="border:none; padding-top:0;">
-        <h3 style="margin:0;">${bane}</h3>
+        <h3 style="margin:0;">${bane}${kamp.status === 'active' ? '<span class="live-dot" style="margin-left:8px;"></span>' : ''}</h3>
         <span class="badge badge-accent">${kamp.disiplin}</span>
       </div>
       <div class="court-players">

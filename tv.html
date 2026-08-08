@@ -29,7 +29,7 @@
 
   /* --- Courts-rutenett --- */
   .tv-courts-grid { flex: 1; display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(2, 1fr); gap: clamp(12px, 1.4vw, 24px); }
-  .tv-court { background: var(--navy2); border: 1px solid var(--border); border-radius: 20px; padding: clamp(14px, 1.6vw, 28px); display: flex; flex-direction: column; position: relative; overflow: hidden; }
+  .tv-court { background: var(--navy2); border: 1px solid var(--border); border-radius: 20px; padding: clamp(14px, 1.6vw, 28px); display: flex; flex-direction: column; position: relative; overflow: hidden; animation: fadeInUp .35s ease; }
   .tv-court::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 6px; }
   .tv-court.disiplin-pickleball::before { background: var(--accent2); }
   .tv-court.disiplin-skyball::before { background: var(--green2); }
@@ -37,14 +37,15 @@
   .tv-court-navn { font-size: clamp(14px, 1.1vw, 20px); color: var(--muted2); text-transform: uppercase; letter-spacing: 1.5px; }
   .tv-court-spillere { font-size: clamp(18px, 1.8vw, 30px); margin: 6px 0; display: flex; justify-content: space-between; }
   .tv-court-score { font-family: 'DM Mono', monospace; font-size: clamp(30px, 3.4vw, 56px); text-align: center; margin: auto 0; }
-  .tv-court-timer { font-family: 'Bebas Neue', cursive; letter-spacing: 2px; font-size: clamp(36px, 4vw, 64px); text-align: center; }
+  .tv-court-timer { font-family: 'DM Mono', monospace; font-size: clamp(32px, 3.6vw, 58px); text-align: center; }
   .tv-court-timer.warning { color: var(--yellow); }
   .tv-court-timer.sudden-death { color: var(--red2); animation: pulse 1s infinite; }
   @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .4; } }
+  @keyframes fadeInUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
 
   /* --- Leaderboard --- */
   .tv-leaderboard-grid { flex: 1; display: grid; grid-template-columns: repeat(2, 1fr); gap: clamp(12px, 1.6vw, 28px); }
-  .tv-pulje-kort { background: var(--navy2); border: 1px solid var(--border); border-radius: 20px; padding: clamp(16px, 1.6vw, 28px); }
+  .tv-pulje-kort { background: var(--navy2); border: 1px solid var(--border); border-radius: 20px; padding: clamp(16px, 1.6vw, 28px); animation: fadeInUp .35s ease; }
   .tv-pulje-kort h2 { font-size: clamp(22px, 2.2vw, 36px); }
   .tv-rad { display: flex; align-items: center; font-size: clamp(16px, 1.4vw, 26px); padding: clamp(6px, .6vw, 12px) 0; border-bottom: 1px solid var(--border); }
   .tv-rad:last-child { border-bottom: none; }
@@ -55,10 +56,10 @@
   /* --- Top 8 / Finale --- */
   .tv-centered { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
   .tv-top8-liste { display: grid; grid-template-columns: repeat(2, 1fr); gap: clamp(10px, 1.4vw, 22px); max-width: 900px; width: 100%; }
-  .tv-top8-navn { font-size: clamp(22px, 2.4vw, 38px); background: var(--navy2); border: 1px solid var(--border); border-radius: 14px; padding: clamp(12px, 1.2vw, 20px); }
+  .tv-top8-navn { font-size: clamp(22px, 2.4vw, 38px); background: var(--navy2); border: 1px solid var(--border); border-radius: 14px; padding: clamp(12px, 1.2vw, 20px); animation: fadeInUp .35s ease; }
 
   .tv-finale-vs { font-size: clamp(48px, 7vw, 110px); margin: clamp(10px, 2vw, 30px) 0; }
-  .tv-finale-navn { font-size: clamp(28px, 3.2vw, 52px); color: var(--yellow); }
+  .tv-finale-navn { font-family: 'Bebas Neue', cursive; letter-spacing: 2px; font-size: clamp(28px, 3.2vw, 52px); color: var(--yellow); }
   .tv-finale-score { font-family: 'DM Mono', monospace; font-size: clamp(40px, 5vw, 80px); margin-top: 20px; }
 
   .fullscreen-btn {

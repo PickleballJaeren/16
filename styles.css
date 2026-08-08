@@ -40,12 +40,12 @@ body {
   padding-top: env(safe-area-inset-top);
 }
 
-h1, h2, h3, .display, .btn, .score {
+h1, h2, h3, .display, .btn {
   font-family: 'Bebas Neue', cursive;
   letter-spacing: 1.5px;
 }
 
-.mono { font-family: 'DM Mono', monospace; }
+.mono, .score { font-family: 'DM Mono', monospace; }
 
 h1 { font-size: 34px; letter-spacing: 2px; margin: 0 0 4px; }
 h2 { font-size: 24px; letter-spacing: 1.5px; margin: 0 0 12px; color: var(--white); }
@@ -102,6 +102,7 @@ p, label, span, div { color: var(--white); }
   border-radius: 16px;
   padding: 18px;
   margin-bottom: 14px;
+  animation: fadeInUp .35s ease;
 }
 
 .card-inner {
@@ -109,6 +110,22 @@ p, label, span, div { color: var(--white); }
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 12px;
+  animation: fadeInUp .35s ease;
+}
+
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.live-dot {
+  display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+  background: var(--red2); margin-right: 6px; flex-shrink: 0;
+  animation: live-puls 1.4s ease-in-out infinite;
+}
+@keyframes live-puls {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: .35; transform: scale(1.35); }
 }
 
 /* -------------------- Knapper -------------------- */
