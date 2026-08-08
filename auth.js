@@ -16,7 +16,7 @@
 // BYTT PIN-EN under før du deployer til klubben:
 // ============================================================================
 
-const ADMIN_PIN = '1234';
+const ADMIN_PIN = '9436';
 
 let erAdmin = false;
 const lyttere = [];
