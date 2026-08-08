@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>16 — TV Mode</title>
+<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap">
+<meta name="theme-color" content="#050f1f">
+<style>
+  html, body { height: 100%; overflow: hidden; }
+  body { display: flex; flex-direction: column; }
+
+  .tv-shell {
+    flex: 1; display: flex; flex-direction: column;
+    padding: clamp(20px, 3vw, 48px);
+    max-width: none; margin: 0;
+  }
+
+  .tv-header {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-bottom: clamp(16px, 2vw, 32px);
+  }
+  .tv-header h1 { font-size: clamp(32px, 4vw, 56px); color: var(--yellow); margin: 0; }
+  .tv-header .tv-sub { font-size: clamp(16px, 1.4vw, 24px); color: var(--muted2); font-family: 'DM Mono', monospace; }
+
+  .tv-slide { flex: 1; display: none; opacity: 0; transition: opacity .5s ease; }
+  .tv-slide.active { display: flex; flex-direction: column; opacity: 1; }
+
+  /* --- Courts-rutenett --- */
+  .tv-courts-grid { flex: 1; display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(2, 1fr); gap: clamp(12px, 1.4vw, 24px); }
+  .tv-court { background: var(--navy2); border: 1px solid var(--border); border-radius: 20px; padding: clamp(14px, 1.6vw, 28px); display: flex; flex-direction: column; position: relative; overflow: hidden; }
+  .tv-court::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 6px; }
+  .tv-court.disiplin-pickleball::before { background: var(--accent2); }
+  .tv-court.disiplin-skyball::before { background: var(--green2); }
+  .tv-court.disiplin-speedminton::before { background: var(--orange); }
+  .tv-court-navn { font-size: clamp(14px, 1.1vw, 20px); color: var(--muted2); text-transform: uppercase; letter-spacing: 1.5px; }
+  .tv-court-spillere { font-size: clamp(18px, 1.8vw, 30px); margin: 6px 0; display: flex; justify-content: space-between; }
+  .tv-court-score { font-family: 'DM Mono', monospace; font-size: clamp(30px, 3.4vw, 56px); text-align: center; margin: auto 0; }
+  .tv-court-timer { font-family: 'Bebas Neue', cursive; letter-spacing: 2px; font-size: clamp(36px, 4vw, 64px); text-align: center; }
+  .tv-court-timer.warning { color: var(--yellow); }
+  .tv-court-timer.sudden-death { color: var(--red2); animation: pulse 1s infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .4; } }
+
+  /* --- Leaderboard --- */
+  .tv-leaderboard-grid { flex: 1; display: grid; grid-template-columns: repeat(2, 1fr); gap: clamp(12px, 1.6vw, 28px); }
+  .tv-pulje-kort { background: var(--navy2); border: 1px solid var(--border); border-radius: 20px; padding: clamp(16px, 1.6vw, 28px); }
+  .tv-pulje-kort h2 { font-size: clamp(22px, 2.2vw, 36px); }
+  .tv-rad { display: flex; align-items: center; font-size: clamp(16px, 1.4vw, 26px); padding: clamp(6px, .6vw, 12px) 0; border-bottom: 1px solid var(--border); }
+  .tv-rad:last-child { border-bottom: none; }
+  .tv-rad .rank { width: 2em; font-family: 'DM Mono', monospace; color: var(--muted2); }
+  .tv-rad .navn { flex: 1; }
+  .tv-rad .tall { font-family: 'DM Mono', monospace; color: var(--muted2); font-size: 0.8em; }
+
+  /* --- Top 8 / Finale --- */
+  .tv-centered { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+  .tv-top8-liste { display: grid; grid-template-columns: repeat(2, 1fr); gap: clamp(10px, 1.4vw, 22px); max-width: 900px; width: 100%; }
+  .tv-top8-navn { font-size: clamp(22px, 2.4vw, 38px); background: var(--navy2); border: 1px solid var(--border); border-radius: 14px; padding: clamp(12px, 1.2vw, 20px); }
+
+  .tv-finale-vs { font-size: clamp(48px, 7vw, 110px); margin: clamp(10px, 2vw, 30px) 0; }
+  .tv-finale-navn { font-size: clamp(28px, 3.2vw, 52px); color: var(--yellow); }
+  .tv-finale-score { font-family: 'DM Mono', monospace; font-size: clamp(40px, 5vw, 80px); margin-top: 20px; }
+
+  .fullscreen-btn {
+    position: fixed; bottom: 16px; right: 16px; z-index: 50;
+    background: var(--navy2); border: 1px solid var(--border2); color: var(--white);
+    border-radius: 10px; padding: 8px 14px; font-size: 13px; cursor: pointer; opacity: .5;
+  }
+  .fullscreen-btn:hover { opacity: 1; }
+</style>
+</head>
+<body>
+
+<div class="tv-shell">
+  <div class="tv-header">
+    <h1 id="tv-eventnavn">16</h1>
+    <span class="tv-sub" id="tv-status">—</span>
+  </div>
+
+  <div id="slide-courts" class="tv-slide">
+    <div class="tv-courts-grid" id="tv-courts-grid"></div>
+  </div>
+
+  <div id="slide-leaderboard" class="tv-slide">
+    <div class="tv-leaderboard-grid" id="tv-leaderboard-grid"></div>
+  </div>
+
+  <div id="slide-top8" class="tv-slide">
+    <div class="tv-centered">
+      <h1 style="font-size:clamp(28px,3vw,48px); color:var(--yellow);">TOP 8 QUALIFIED</h1>
+      <div class="tv-top8-liste" id="tv-top8-liste"></div>
+    </div>
+  </div>
+
+  <div id="slide-bracket" class="tv-slide">
+    <div class="tv-centered">
+      <h1 id="tv-bracket-tittel" style="font-size:clamp(28px,3vw,48px);">Sluttspill</h1>
+      <div class="tv-top8-liste" id="tv-bracket-liste" style="grid-template-columns: 1fr;"></div>
+    </div>
+  </div>
+
+  <div id="slide-final" class="tv-slide">
+    <div class="tv-centered">
+      <p class="muted2" style="font-size:clamp(16px,1.6vw,24px); text-transform:uppercase; letter-spacing:3px;">Finalen</p>
+      <div class="tv-finale-vs">
+        <span class="tv-finale-navn" id="tv-final-a">—</span>
+        <span class="muted2" style="margin:0 24px;">vs</span>
+        <span class="tv-finale-navn" id="tv-final-b">—</span>
+      </div>
+      <p class="tv-finale-score" id="tv-final-score">0 – 0</p>
+      <p class="muted2 mono" id="tv-final-disiplin" style="margin-top:16px; font-size:clamp(16px,1.4vw,22px);"></p>
+    </div>
+  </div>
+
+  <div id="slide-champion" class="tv-slide">
+    <div class="tv-centered">
+      <p class="muted2" style="font-size:clamp(16px,1.6vw,24px); text-transform:uppercase; letter-spacing:3px;">Champion</p>
+      <h1 id="tv-champion-navn" style="font-size:clamp(48px,7vw,110px); color:var(--yellow);">—</h1>
+      <p class="muted2 mono" id="tv-champion-info"></p>
+    </div>
+  </div>
+</div>
+
+<button class="fullscreen-btn" id="fullscreen-btn">⛶ Fullskjerm</button>
+
+<script type="module" src="tv.js"></script>
+</body>
+</html>
