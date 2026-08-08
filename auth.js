@@ -1,36 +1,34 @@
 // ============================================================================
 // auth.js — "16"
 //
-// ALLE brukere (spillere, TV Mode, admin) logges anonymt inn automatisk ved
-// appstart — det er det som gjør at firestore.rules kan kreve
-// `request.auth != null` for lesing uten å vise en innloggingsskjerm for
-// vanlige besøkende.
+// FORENKLET VERSJON: samme mønster som de tre andre appene i prosjektet --
+// klient-sjekket PIN, ingen Firebase Auth eller Cloud Function bak. Dette er
+// en bevisst nedgradering fra den opprinnelig anbefalte løsningen (Anonymous
+// Auth + server-verifisert custom claim via Cloud Function).
 //
-// Admin-RETTIGHETEN er noe helt annet: den kommer fra et `admin: true`
-// custom claim på auth-tokenet, satt av Cloud Function-en `verifyAdminPin`
-// (se functions/index.js) etter at PIN er verifisert SERVER-SIDE. Ingenting
-// her stoler på en klient-sjekket PIN alene — det er nettopp mønsteret vi
-// IKKE skal gjenta fra de tre andre appene.
+// KONSEKVENS (gjelder likt for denne og de tre andre appene dine): enhver
+// som åpner nettleserens utviklerverktøy og leser denne filen kan finne
+// PIN-en og skrive/overstyre resultater direkte mot Firestore. Reglene i
+// firestore.rules kan ikke skille "riktig admin" fra "hvem som helst" uten
+// en ekte autentiseringsmekanisme bak PIN-en. Det er en bevisst, konsistent
+// avveining med resten av oppsettet ditt -- ikke en glipp.
+//
+// BYTT PIN-EN under før du deployer til klubben:
 // ============================================================================
 
-import { auth, funcs } from './firebase-init.js';
-import {
-  signInAnonymously,
-  onAuthStateChanged,
-} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
-import { httpsCallable } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-functions.js";
+const ADMIN_PIN = '1234';
 
-let gjeldendeBruker = null;
 let erAdmin = false;
 const lyttere = [];
 
 /**
- * Registrer en callback som får {bruker, erAdmin} hver gang auth-status
- * endrer seg (innlogget, eller admin-status endret via PIN).
+ * Registrer en callback som får {bruker, erAdmin}. `bruker` er alltid `true`
+ * her (ingen innlogging trengs for å LESE data -- kun for admin-skriving),
+ * beholdt kun for å matche samme grensesnitt resten av appen forventer.
  */
 export function paAuthEndring(cb) {
   lyttere.push(cb);
-  if (gjeldendeBruker) cb({ bruker: gjeldendeBruker, erAdmin });
+  cb({ bruker: true, erAdmin });
   return () => {
     const i = lyttere.indexOf(cb);
     if (i !== -1) lyttere.splice(i, 1);
@@ -38,54 +36,21 @@ export function paAuthEndring(cb) {
 }
 
 function varsleAlle() {
-  for (const cb of lyttere) cb({ bruker: gjeldendeBruker, erAdmin });
+  for (const cb of lyttere) cb({ bruker: true, erAdmin });
 }
 
-onAuthStateChanged(auth, async (bruker) => {
-  if (!bruker) {
-    try {
-      await signInAnonymously(auth);
-    } catch (e) {
-      console.error('Kunne ikke logge inn anonymt:', e);
-    }
-    return; // onAuthStateChanged trigges på nytt når den anonyme brukeren er klar
-  }
-  gjeldendeBruker = bruker;
-  const tokenResultat = await bruker.getIdTokenResult();
-  erAdmin = tokenResultat.claims.admin === true;
-  varsleAlle();
-});
-
 /**
- * Forsøker å logge inn som admin med en PIN. PIN-en sendes ALDRI direkte inn
- * i Firestore-regler — den verifiseres i en Cloud Function, som deretter
- * setter custom claim'et på den allerede anonymt innloggede brukeren.
- *
  * @returns {Promise<{ok:boolean, feil?:string}>}
  */
 export async function loggInnSomAdmin(pin) {
-  if (!gjeldendeBruker) {
-    return { ok: false, feil: 'Ikke innlogget ennå — prøv igjen om et øyeblikk.' };
-  }
-  try {
-    const verifiser = httpsCallable(funcs, 'verifyAdminPin');
-    const respons = await verifiser({ pin: String(pin) });
-    if (!respons.data?.ok) {
-      return { ok: false, feil: respons.data?.feil ?? 'Feil PIN.' };
-    }
-    // Tving refresh av ID-tokenet slik at det nye custom claim'et faktisk
-    // følger med i påfølgende Firestore-kall.
-    await gjeldendeBruker.getIdToken(true);
-    const tokenResultat = await gjeldendeBruker.getIdTokenResult();
-    erAdmin = tokenResultat.claims.admin === true;
+  if (String(pin) === ADMIN_PIN) {
+    erAdmin = true;
     varsleAlle();
-    return { ok: erAdmin, feil: erAdmin ? undefined : 'Fikk ikke admin-rettighet — prøv igjen.' };
-  } catch (e) {
-    console.error('Admin-innlogging feilet:', e);
-    return { ok: false, feil: 'Noe gikk galt under innlogging. Sjekk internettforbindelsen.' };
+    return { ok: true };
   }
+  return { ok: false, feil: 'Feil PIN.' };
 }
 
 export function hentAuthStatus() {
-  return { bruker: gjeldendeBruker, erAdmin };
+  return { bruker: true, erAdmin };
 }

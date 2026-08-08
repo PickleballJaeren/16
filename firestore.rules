@@ -1,95 +1,217 @@
-// ============================================================================
-// "16" — regel-blokk for seksten_*-samlingene.
-// Dette er IKKE en komplett firestore.rules-fil — det er blokken som skal
-// limes inn i det eksisterende, delte rules-dokumentet sammen med reglene
-// for de tre andre appene (1 vs 1, stafettliga, klubb-app). Ikke overskriv
-// deres regler.
-//
-// Forutsetning: Firebase Anonymous Auth er slått på, og en Cloud Function
-// (verifyAdminPin) setter custom claim `admin: true` på riktig token etter
-// server-side PIN-sjekk. Se docs/datamodell.md, avsnitt "Åpne spørsmål".
-// ============================================================================
-
 rules_version = '2';
-
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // --- Hjelpefunksjoner (navngi dem unikt hvis de eksisterende reglene
-    //     allerede har funksjoner med samme navn) ---
-    function seksten_isSignedIn() {
-      return request.auth != null;
+    // ════════════════════════════════════════════════════════
+    // VIKTIG BEGRENSNING, LES FØR DU ENDRER NOE HER:
+    //
+    // "1 vs 1" (og de andre appene i dette delte prosjektet) har INGEN
+    // ekte autentisering -- admin-PIN-en sjekkes kun i nettleseren
+    // (admin.js) og sendes ALDRI til Firestore. Det betyr at
+    // request.auth alltid er null, og disse reglene derfor IKKE kan
+    // skille "riktig klubbs admin" fra "hvem som helst på internett" --
+    // uansett hvor stram valideringen under er, kan enhver som finner
+    // Firebase-konfigurasjonen (den ligger uansett i klartekst i
+    // firebase.js, siden nettleseren må ha den) lese og skrive gyldige
+    // dokumenter.
+    //
+    // Det reglene under FAKTISK oppnår er å avvise dokumenter som ikke
+    // følger skjemaet appen forventer -- det stopper søppeldata fra en
+    // enkel bot/scraper som prøver seg blindt, og reduserer skaden av et
+    // uhell (f.eks. en feil i en helt annen app i samme prosjekt). Det
+    // stopper IKKE en målrettet aktør fra å lese eller skrive gyldige
+    // dokumenter i appens navn.
+    //
+    // For ekte tilgangskontroll (kun klubbens egen admin kan skrive for
+    // DEN klubben) trengs en reell autentiseringsmekanisme -- f.eks.
+    // Firebase Anonymous Auth kombinert med en Cloud Function som
+    // verifiserer PIN-en og setter et custom claim, eller App Check for
+    // å i det minste kreve at trafikken kommer fra selve appen. Dette er
+    // IKKE gjort her -- det er et eget, større arbeid.
+    //
+    // "16" bruker SAMME mønster som appene over -- ren klient-sjekket PIN,
+    // ingen ekte autentisering bak. Reglene under sjekker derfor kun
+    // STRUKTURELL gyldighet på innsendte dokumenter (riktige feltnavn/typer),
+    // ikke HVEM som skriver -- nøyaktig samme begrensning som beskrevet i
+    // varselet over gjelder også her.
+    // ════════════════════════════════════════════════════════
+
+    // ── Generiske hjelpefunksjoner ──────────────────────────
+    function erStreng(v)  { return v is string; }
+    function erTall(v)    { return v is int || v is float; }
+
+    // Klubb-IDer er faste, kjente verdier (se KLUBBER i app.js) --
+    // begrenser dokument-IDer som inneholder klubbId til et fornuftig
+    // format i stedet for et vilkårlig langt/skadelig navn.
+    function gyldigKlubbIdSegment(s) {
+      return s.matches('[a-z0-9-]{1,40}');
     }
 
-    function seksten_isAdmin() {
-      return seksten_isSignedIn() && request.auth.token.admin == true;
+    // ── Eldre samlinger (andre apper i samme prosjekt) — urørt ──
+    match /players/{spillerId} { allow read: if true; allow write: if true; }
+    match /treninger/{treningId} { allow read: if true; allow write: if true; }
+    match /kamper/{kampId} { allow read: if true; allow write: if true; }
+    match /treningSpillere/{tsId} { allow read: if true; allow write: if true; }
+    match /resultater/{resultatId} { allow read: if true; allow write: if true; }
+    match /ratingHistorikk/{histId} { allow read: if true; allow write: if true; }
+    match /utfordringer/{utfordringId} { allow read: if true; allow write: if true; }
+    match /singelHistorikk/{dokId} { allow read: if true; allow write: if true; }
+    match /turneringer/{turneringId} { allow read: if true; allow write: if true; }
+
+    // ── STAFETTLIGAEN ──────────────────────────────────────
+    match /stafettligaSesonger/{sesongId} { allow read: if true; allow write: if true; }
+    match /stafettligaLagkamper/{kampId} { allow read: if true; allow write: if true; }
+    match /stafettligaBonuskamper/{bonusId} { allow read: if true; allow write: if true; }
+    match /klubber/{klubbId} { allow read: if true; allow write: if true; }
+
+    // ── 1 VS 1 ─────────────────────────────────────────────
+
+    // players/{spillerId} dekkes av match-blokken over (delt samling).
+
+    // Kategorirating per spiller (id: {spillerId}_{kategori})
+    match /playerCategoryRatings/{dokId} {
+      allow read: if true;
+      allow create, update: if
+        erStreng(request.resource.data.spillerId) &&
+        erStreng(request.resource.data.kategori) &&
+        erTall(request.resource.data.elo);
+      allow delete: if true;
     }
+
+    // Fremgang/provisional-status per konkurranse (id: {spillerId}_{konkurranse})
+    match /playerCompetitionProgress/{dokId} {
+      allow read: if true;
+      allow create, update: if
+        erStreng(request.resource.data.spillerId) &&
+        erStreng(request.resource.data.konkurranse);
+      allow delete: if true;
+    }
+
+    // Allround-rating per spiller (id: {spillerId})
+    match /playerAllround/{spillerId} {
+      allow read: if true;
+      allow create, update: if erTall(request.resource.data.allround);
+      allow delete: if true;
+    }
+
+    // Aktiv, pågående økt -- én per klubb, delt i sanntid.
+    match /activeSessions/{klubbId} {
+      allow read: if true;
+      allow write: if gyldigKlubbIdSegment(klubbId);
+    }
+
+    // Leaderboards — ferdig-sorterte ratinglister, id: {klubbId}_{fane}.
+    // Se domain-repository-leaderboardRepository.js.
+    match /leaderboards/{dokId} {
+      allow read: if true;
+      allow create, update: if
+        erStreng(request.resource.data.klubbId) &&
+        erStreng(request.resource.data.fane) &&
+        request.resource.data.rader is list &&
+        request.resource.data.rader.size() <= 50;
+      allow delete: if true;
+    }
+
+    // Klubbens EGET økt-arkiv: klubber/{klubbId}/sessions/{oktId}.
+    // Erstatter den gamle, flate sessions-samlingen over.
+    match /klubber/{klubbId}/sessions/{oktId} {
+      allow read: if true;
+      allow create, update: if
+        gyldigKlubbIdSegment(klubbId) &&
+        erStreng(request.resource.data.konkurranse) &&
+        request.resource.data.resultatPerSpiller is list;
+      allow delete: if gyldigKlubbIdSegment(klubbId);
+    }
+
+    // ── Ferdighetstester ──────────────────────────────────
+    match /skillTestResults/{dokId} {
+      allow read: if true;
+      allow create, update: if erStreng(request.resource.data.spillerId) && erStreng(request.resource.data.testType);
+      allow delete: if true;
+    }
+    match /skillTestThresholds/{dokId} {
+      allow read: if true;
+      allow create, update: if erStreng(request.resource.data.klubbId) && erStreng(request.resource.data.testType);
+      allow delete: if true;
+    }
+    match /playerSkillTests/{dokId} {
+      allow read: if true;
+      allow create, update: if erStreng(request.resource.data.spillerId) && erStreng(request.resource.data.testType);
+      allow delete: if true;
+    }
+
+    // ── Påmelding til treningsspor ──────────────────────────
+    match /pameldingsrunder/{klubbId} {
+      allow read: if true;
+      allow write: if gyldigKlubbIdSegment(klubbId);
+    }
+    match /sporInteresse/{dokId} {
+      allow read: if true;
+      allow create, update: if erStreng(request.resource.data.klubbId) && erStreng(request.resource.data.spillerId);
+      allow delete: if true;
+    }
+
+    // ════════════════════════════════════════════════════════
+    // "16" — regler for seksten_*-samlingene
+    // Samme mønster som resten av filen: åpen lesing/skriving, men med
+    // strukturell validering av feltnavn/typer (ikke ekte tilgangskontroll
+    // -- se varselet øverst i filen).
+    // ════════════════════════════════════════════════════════
 
     function seksten_isString(v)  { return v is string; }
     function seksten_isNumber(v)  { return v is number; }
     function seksten_isBool(v)    { return v is bool; }
-    function seksten_isTimestamp(v) { return v is timestamp; }
 
-    // ---------------------------------------------------------------------
-    // seksten_settings/app — singleton
-    // ---------------------------------------------------------------------
     match /seksten_settings/{docId} {
-      allow read: if true; // trengs uinnlogget (f.eks. TV Mode på en enhet uten init)
-      allow write: if seksten_isAdmin()
-        && request.resource.data.keys().hasAll(['eventNavn', 'tagline', 'disipliner', 'oppdatert'])
+      allow read: if true;
+      allow write: if
+        request.resource.data.keys().hasAll(['eventNavn', 'tagline', 'disipliner', 'oppdatert'])
         && seksten_isString(request.resource.data.eventNavn)
         && seksten_isString(request.resource.data.tagline)
         && request.resource.data.disipliner is list;
     }
 
-    // ---------------------------------------------------------------------
-    // seksten_spillere/{spillerId} — master-spillerregister
-    // ---------------------------------------------------------------------
     match /seksten_spillere/{spillerId} {
-      allow read: if seksten_isSignedIn();
-      allow create: if seksten_isAdmin()
-        && request.resource.data.keys().hasAll(['navn', 'aktiv', 'opprettet', 'stats'])
+      allow read: if true;
+      allow create: if
+        request.resource.data.keys().hasAll(['navn', 'aktiv', 'opprettet', 'stats'])
         && seksten_isString(request.resource.data.navn)
         && request.resource.data.navn.size() > 0
         && seksten_isBool(request.resource.data.aktiv);
-      allow update: if seksten_isAdmin()
-        && seksten_isString(request.resource.data.navn)
+      allow update: if
+        seksten_isString(request.resource.data.navn)
         && seksten_isBool(request.resource.data.aktiv);
-      allow delete: if false; // deaktiver (aktiv:false) i stedet for å slette — bevar historikk
+      allow delete: if false;
 
       match /historikk/{eventId} {
-        allow read: if seksten_isSignedIn();
-        // skrives kun av server-/admin-flyt når et event fullføres
-        allow write: if seksten_isAdmin();
+        allow read: if true;
+        allow write: if true;
       }
     }
 
-    // ---------------------------------------------------------------------
-    // seksten_events/{eventId} + subcollections
-    // ---------------------------------------------------------------------
     match /seksten_events/{eventId} {
-      allow read: if true; // spillerflate/TV Mode kan være uinnlogget visning
-      allow create, update: if seksten_isAdmin()
-        && request.resource.data.keys().hasAll(
+      allow read: if true;
+      allow create, update: if
+        request.resource.data.keys().hasAll(
              ['navn', 'status', 'eventNummer', 'config', 'gjeldendeRunde', 'sluttspillFase'])
         && request.resource.data.status in
              ['draft', 'registration_open', 'registration_closed',
               'main_event', 'playoffs', 'completed']
         && request.resource.data.sluttspillFase in
              ['none', 'quarterfinal', 'semifinal', 'final', 'completed'];
-      allow delete: if false; // fullførte eventer skal aldri kunne slettes (Hall of Fame-historikk)
+      allow delete: if false;
 
       match /puljer/{puljeId} {
         allow read: if true;
-        allow write: if seksten_isAdmin()
-          && request.resource.data.spillerIds is list
+        allow write: if
+          request.resource.data.spillerIds is list
           && request.resource.data.spillerIds.size() <= 4;
       }
 
       match /spillere/{rosterSpillerId} {
         allow read: if true;
-        allow write: if seksten_isAdmin()
-          && request.resource.data.keys().hasAll(
+        allow write: if
+          request.resource.data.keys().hasAll(
                ['spillerId', 'navn', 'kvalifiseringsstatusKilde', 'qualifiedForNext'])
           && request.resource.data.kvalifiseringsstatusKilde in
                ['returning_top8', 'qualifier_winner', 'wildcard', 'admin_invite']
@@ -97,64 +219,45 @@ service cloud.firestore {
       }
 
       match /kamper/{kampId} {
-        allow read: if true; // Courts-visning og TV Mode må kunne leses uinnlogget
-        allow create: if seksten_isAdmin()
-          && request.resource.data.keys().hasAll(
+        allow read: if true;
+        allow create: if
+          request.resource.data.keys().hasAll(
                ['runde', 'fase', 'bane', 'disiplin', 'spillerA', 'spillerB', 'status'])
           && request.resource.data.disiplin in ['pickleball', 'skyball', 'speedminton']
           && request.resource.data.status in ['scheduled', 'active', 'completed']
           && request.resource.data.fase in ['pool', 'quarterfinal', 'semifinal', 'final'];
-        // update dekker: admin registrerer resultat, starter/pauser timer, overstyrer
-        allow update: if seksten_isAdmin()
-          && request.resource.data.status in ['scheduled', 'active', 'completed'];
+        allow update: if
+          request.resource.data.status in ['scheduled', 'active', 'completed'];
         allow delete: if false;
       }
 
       match /leaderboard/{puljeId} {
-        allow read: if true; // dette ER det klienten faktisk leser — må være billig og åpent
-        // Skrives av admin-klienten i samme batch som kampresultatet,
-        // ALDRI beregnet/lest på nytt fra kamper ved hver visning.
-        allow write: if seksten_isAdmin()
-          && request.resource.data.rangering is list
+        allow read: if true;
+        allow write: if
+          request.resource.data.rangering is list
           && request.resource.data.rangering.size() <= 4;
       }
 
       match /sluttspill/{fase} {
         allow read: if true;
-        allow write: if seksten_isAdmin()
-          && request.resource.data.kampIds is list
+        allow write: if
+          request.resource.data.kampIds is list
           && request.resource.data.bestAvSeire == 2;
       }
     }
 
-    // ---------------------------------------------------------------------
-    // seksten_live/aktivEvent — det ENESTE dokumentet TV Mode/Courts abonnerer
-    // direkte på for å vite hva som er live.
-    // ---------------------------------------------------------------------
     match /seksten_live/{docId} {
       allow read: if true;
-      allow write: if seksten_isAdmin();
+      allow write: if true;
     }
 
-    // ---------------------------------------------------------------------
-    // seksten_champions/{championId} — Hall of Fame
-    // ---------------------------------------------------------------------
     match /seksten_champions/{championId} {
       allow read: if true;
-      allow write: if seksten_isAdmin()
-        && request.resource.data.keys().hasAll(
+      allow write: if
+        request.resource.data.keys().hasAll(
              ['spillerId', 'navn', 'eventNummer', 'eventId', 'dato', 'antallSeireTotalt'])
         && seksten_isString(request.resource.data.navn)
         && seksten_isNumber(request.resource.data.antallSeireTotalt);
-    }
-
-    // ---------------------------------------------------------------------
-    // seksten_admins/{uid} — kun lesbar oversikt; selve rettigheten er
-    // custom claim'et, satt av Cloud Function, ikke av dette dokumentet.
-    // ---------------------------------------------------------------------
-    match /seksten_admins/{uid} {
-      allow read: if seksten_isAdmin();
-      allow write: if false; // kun Cloud Functions (Admin SDK, omgår disse reglene) skriver hit
     }
   }
 }

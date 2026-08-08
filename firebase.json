@@ -1,8 +1,4 @@
 {
-  "functions": {
-    "source": ".",
-    "runtime": "nodejs20"
-  },
   "hosting": {
     "public": ".",
     "ignore": [
@@ -11,7 +7,6 @@
       "node_modules/**",
       "package.json",
       "package-lock.json",
-      "index.js",
       "kampgenerator.test.js",
       "eventlogikk.test.js",
       "full-gjennomkjoring.test.js",

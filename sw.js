@@ -16,7 +16,7 @@
 // cacher ryddes bort automatisk i activate-steget.
 // ============================================================================
 
-const CACHE_VERSION = 'v1';
+const CACHE_VERSION = 'v2';
 const APP_CACHE = `seksten-app-shell-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `seksten-runtime-${CACHE_VERSION}`;
 
@@ -54,23 +54,16 @@ const APP_SHELL = [
 // offline (import-setningene ville feile).
 const FIREBASE_SDK_URLS = [
   'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js',
-  'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js',
   'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js',
-  'https://www.gstatic.com/firebasejs/10.14.1/firebase-functions.js',
 ];
 
 const GOOGLE_FONTS_STYLESHEET =
   'https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap';
 
-// Verter vi ALDRI skal legge oss i veien for — Firestore/Auth/Functions-kall
-// (både REST/WebChannel-endepunkter og selve Cloud Functions-kallet).
+// Verter vi ALDRI skal legge oss i veien for — Firestore-kall (WebChannel/
+// long-polling-endepunktene Firestore SDK-en bruker).
 const BYPASS_HOSTNAMES = [
   'firestore.googleapis.com',
-  'identitytoolkit.googleapis.com',
-  'securetoken.googleapis.com',
-  'firebaseinstallations.googleapis.com',
-  'cloudfunctions.net',
-  'run.app', // Cloud Functions v2 kjører bak Cloud Run
 ];
 
 // ----------------------------------------------------------------------------
