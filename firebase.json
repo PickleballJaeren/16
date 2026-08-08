@@ -1,0 +1,24 @@
+{
+  "functions": {
+    "source": ".",
+    "runtime": "nodejs20"
+  },
+  "hosting": {
+    "public": ".",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "node_modules/**",
+      "package.json",
+      "package-lock.json",
+      "index.js",
+      "kampgenerator.test.js",
+      "eventlogikk.test.js",
+      "datamodell.md",
+      "firestore.rules"
+    ]
+  },
+  "firestore": {
+    "rules": "firestore.rules"
+  }
+}

@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>16 — Admin</title>
+<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap">
+<link rel="manifest" href="manifest.json">
+</head>
+<body>
+
+<div id="offline-indicator" class="offline-indicator" hidden>
+  Ingen tilkobling — endringer lagres lokalt og synkroniseres når du er online igjen.
+</div>
+
+<!-- PIN-gate: vises til admin er innlogget -->
+<div id="pin-gate" class="pin-gate" hidden>
+  <h1 id="pin-event-navn">16</h1>
+  <p class="muted2" style="margin-bottom:24px;">Admin-tilgang</p>
+  <input id="pin-input" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" placeholder="••••">
+  <button id="pin-submit" class="btn btn-primary" style="max-width:220px;">Logg inn</button>
+  <p id="pin-feilmelding" class="badge badge-danger" style="margin-top:14px;" hidden></p>
+</div>
+
+<!-- Selve dashboardet -->
+<div id="dashboard" class="app-shell" hidden>
+  <h1 id="dashboard-tittel">16 — Admin</h1>
+  <p class="muted2 mono" id="dashboard-status-linje">Laster …</p>
+
+  <div class="tabs">
+    <button class="tab-pill active" data-tab="event">Event</button>
+    <button class="tab-pill" data-tab="spillere">Spillere</button>
+    <button class="tab-pill" data-tab="kamper">Kamper</button>
+    <button class="tab-pill" data-tab="sluttspill">Sluttspill</button>
+    <button class="tab-pill" data-tab="leaderboard">Leaderboard</button>
+    <button class="tab-pill" data-tab="halloffame">Hall of Fame</button>
+  </div>
+
+  <!-- === EVENT === -->
+  <section id="panel-event" class="panel">
+    <div class="card" id="ingen-event-kort">
+      <h2>Nytt event</h2>
+      <div class="field">
+        <label for="nytt-event-navn">Eventnavn</label>
+        <input id="nytt-event-navn" type="text" placeholder="16 – Event #1">
+      </div>
+      <div class="field">
+        <label for="nytt-event-dato">Dato</label>
+        <input id="nytt-event-dato" type="date">
+      </div>
+      <button id="opprett-event-btn" class="btn btn-primary">Opprett event</button>
+    </div>
+
+    <div class="card" id="event-status-kort" hidden>
+      <h2 id="event-navn-visning">—</h2>
+      <p class="mono muted2" id="event-nummer-visning"></p>
+      <p style="margin:14px 0;">
+        Status: <span class="badge badge-accent" id="event-status-badge">—</span>
+      </p>
+      <div id="event-status-knapper" class="btn-row"></div>
+      <p id="event-status-arsaker" class="muted" style="margin-top:10px; font-size:13px;"></p>
+    </div>
+  </section>
+
+  <!-- === SPILLERE === -->
+  <section id="panel-spillere" class="panel" hidden>
+    <div class="card">
+      <h2>Ny spiller (master-register)</h2>
+      <div class="field">
+        <label for="ny-spiller-navn">Navn</label>
+        <input id="ny-spiller-navn" type="text" placeholder="Kari Nordmann">
+      </div>
+      <button id="opprett-spiller-btn" class="btn btn-outline">Legg til spiller</button>
+    </div>
+
+    <div class="card">
+      <h2>Event-roster <span class="muted2 mono" id="roster-teller">(0/16)</span></h2>
+      <p class="muted" style="font-size:13px; margin-bottom:14px;">
+        Velg 16 spillere fra master-registeret og sett kvalifiseringsstatus for hver.
+      </p>
+      <div class="field">
+        <label for="legg-til-roster-select">Legg til i roster</label>
+        <select id="legg-til-roster-select"></select>
+      </div>
+      <div class="field">
+        <label for="kvalifiseringsstatus-select">Kvalifiseringsstatus</label>
+        <select id="kvalifiseringsstatus-select">
+          <option value="returning_top8">Returning Top 8</option>
+          <option value="qualifier_winner">Qualifier Winner</option>
+          <option value="wildcard">Wildcard</option>
+          <option value="admin_invite">Admin Invite</option>
+        </select>
+      </div>
+      <div class="field" id="wildcard-begrunnelse-felt" hidden>
+        <label for="wildcard-begrunnelse-input">Begrunnelse (wildcard)</label>
+        <input id="wildcard-begrunnelse-input" type="text" placeholder="Valgfritt">
+      </div>
+      <button id="legg-til-roster-btn" class="btn btn-outline">Legg til i roster</button>
+      <div id="roster-liste" class="section-gap"></div>
+    </div>
+
+    <div class="card">
+      <h2>Puljetrekning</h2>
+      <p class="muted" style="font-size:13px; margin-bottom:14px;">
+        Trekker rosteret (16 spillere) tilfeldig ned i 4 puljer à 4. Kan justeres manuelt etterpå.
+      </p>
+      <button id="trekk-puljer-btn" class="btn btn-outline">Trekk puljer tilfeldig</button>
+      <div id="puljer-visning" class="section-gap"></div>
+    </div>
+  </section>
+
+  <!-- === KAMPER === -->
+  <section id="panel-kamper" class="panel" hidden>
+    <div class="card">
+      <h2>Kampoppsett — puljespill</h2>
+      <div class="btn-row">
+        <button id="generer-kampoppsett-btn" class="btn btn-primary">Generer kampoppsett</button>
+        <button id="regenerer-kampoppsett-btn" class="btn btn-danger" hidden>Regenerer</button>
+      </div>
+      <p id="kampoppsett-status" class="muted" style="margin-top:10px; font-size:13px;"></p>
+    </div>
+
+    <div class="card">
+      <h2>Runde</h2>
+      <div class="tabs" style="padding:0; margin-bottom:14px;" id="runde-tabs"></div>
+      <div id="kamper-liste"></div>
+    </div>
+  </section>
+
+  <!-- === SLUTTSPILL === -->
+  <section id="panel-sluttspill" class="panel" hidden>
+    <div class="card">
+      <h2>Kvalifiserte spillere (Topp 8)</h2>
+      <div id="kvalifiserte-liste"></div>
+    </div>
+    <div class="card">
+      <h2>Sluttspill</h2>
+      <div id="sluttspill-kontroll"></div>
+      <div id="sluttspill-bracket" class="section-gap"></div>
+    </div>
+  </section>
+
+  <!-- === LEADERBOARD === -->
+  <section id="panel-leaderboard" class="panel" hidden>
+    <div id="leaderboard-visning"></div>
+  </section>
+
+  <!-- === HALL OF FAME === -->
+  <section id="panel-halloffame" class="panel" hidden>
+    <div class="card">
+      <h2>Registrer champion</h2>
+      <div class="field">
+        <label for="champion-spiller-select">Vinner</label>
+        <select id="champion-spiller-select"></select>
+      </div>
+      <button id="registrer-champion-btn" class="btn btn-primary">Registrer i Hall of Fame</button>
+    </div>
+    <div class="card">
+      <h2>Historikk</h2>
+      <div id="champions-liste"></div>
+    </div>
+  </section>
+
+</div>
+
+<div id="toast-rot"></div>
+
+<script type="module" src="admin.js"></script>
+</body>
+</html>
