@@ -147,21 +147,43 @@ async function startDashboard() {
 
 // ----------------------------------------------------------------------------
 // Event-lasting og modusvalg (wizard vs. live dashboard)
+//
+// Lytterne under (event + roster) meldes eksplisitt av og på per event-id.
+// Tidligere var rosterlytteren gatet bak et "har vi noensinne satt opp
+// lytteren i denne sesjonen"-flagg som aldri ble nullstilt -- det gjorde at
+// rosterlytteren i praksis kunne forbli frakoblet det GJELDENDE eventet
+// etter at lastEvent() ble kalt på nytt (skjer bl.a. etter opprett/slett
+// event, generer kampoppsett, start hovedevent). Symptomet var at admin la
+// til spillere, skrivingen gikk fint til Firestore, men skjermen viste dem
+// ikke før man refreshet siden (som satte opp lytteren på nytt friskt).
 // ----------------------------------------------------------------------------
+
+let avmeldEventLytter = null;
+let avmeldRosterLytter = null;
+let rosterLyttesPaEventId = null;
 
 async function lastEvent() {
   const siste = await repo.hentSisteEventer(1);
+
+  if (avmeldEventLytter) { avmeldEventLytter(); avmeldEventLytter = null; }
+
   if (siste.length === 0) {
+    if (avmeldRosterLytter) { avmeldRosterLytter(); avmeldRosterLytter = null; }
+    rosterLyttesPaEventId = null;
     state.event = null;
+    state.roster = [];
     visModus();
     return;
   }
-  repo.lyttEvent(siste[0].id, async (event) => {
+
+  avmeldEventLytter = repo.lyttEvent(siste[0].id, async (event) => {
     state.event = event;
     if (!event) return;
-    if (!state.roster.length && !state._rosterLastet) {
-      state._rosterLastet = true;
-      repo.lyttRoster(event.id, (roster) => {
+
+    if (rosterLyttesPaEventId !== event.id) {
+      if (avmeldRosterLytter) avmeldRosterLytter();
+      rosterLyttesPaEventId = event.id;
+      avmeldRosterLytter = repo.lyttRoster(event.id, (roster) => {
         state.roster = roster.filter(r => !r.fjernet);
         if (erWizardModus()) renderWizardSteg();
       });
@@ -475,6 +497,15 @@ $('#legg-til-valgte-btn').addEventListener('click', async () => {
     if (!spiller) continue;
     try {
       await repo.leggTilIRoster(state.event.id, spillerId, { navn: spiller.navn, kvalifiseringsstatusKilde: kilde, wildcardBegrunnelse: begrunnelse });
+      // Oppdater lokal state med det samme -- ikke vent på at sanntids-
+      // lytteren skal fange det opp, slik at knappen alltid gir umiddelbar
+      // visuell tilbakemelding selv om lytteren skulle henge etter.
+      if (!state.roster.some(r => r.id === spillerId)) {
+        state.roster.push({
+          id: spillerId, spillerId, navn: spiller.navn, puljeId: null,
+          kvalifiseringsstatusKilde: kilde, wildcardBegrunnelse: begrunnelse, qualifiedForNext: false,
+        });
+      }
     } catch (e) {
       console.error('Feil ved leggTilIRoster:', e);
       feilede.push(spiller.navn);
@@ -487,7 +518,7 @@ $('#legg-til-valgte-btn').addEventListener('click', async () => {
   if (feilede.length > 0) toast('Kunne ikke legge til: ' + feilede.join(', '), 'error');
 
   rosterUtvalg.spillerIder.clear();
-  renderSpillereVelger();
+  renderSteg2();
 });
 
 $('#opprett-spiller-btn').addEventListener('click', async () => {
