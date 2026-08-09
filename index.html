@@ -91,6 +91,7 @@
       <div class="card" id="event-status-kort" hidden>
         <h2 id="event-navn-visning">—</h2>
         <p class="mono muted2" id="event-nummer-visning"></p>
+        <button id="slett-event-btn" class="btn btn-danger btn-small" style="margin-top:14px;">🗑 Slett event permanent</button>
       </div>
     </section>
 
@@ -125,6 +126,15 @@
           <input id="ny-spiller-navn" type="text" placeholder="Kari Nordmann">
         </div>
         <button id="opprett-spiller-btn" class="btn btn-outline">Legg til i klubbregisteret</button>
+      </div>
+
+      <div class="card">
+        <h2>Klubbregister</h2>
+        <p class="muted" style="font-size:12px; margin-bottom:10px;">
+          Alle spillere som noen gang er lagt til. "Slett" her er permanent og kan ikke angres —
+          bruk ✕ i listene over for å bare fjerne en spiller fra DETTE eventets roster.
+        </p>
+        <div id="master-spillere-liste"></div>
       </div>
     </section>
 
@@ -181,6 +191,7 @@
         <p style="margin:14px 0;">Status: <span class="badge badge-accent" id="event-status-badge">—</span></p>
         <div id="event-status-knapper" class="btn-row"></div>
         <p id="event-status-arsaker" class="muted" style="margin-top:10px; font-size:13px;"></p>
+        <button id="slett-event-btn-2" class="btn btn-danger btn-small" style="margin-top:14px;">🗑 Slett event permanent</button>
       </div>
     </section>
 

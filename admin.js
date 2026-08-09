@@ -235,6 +235,41 @@ function renderSteg1() {
   }
 }
 
+/**
+ * Delt av både wizard- og live-dashboard-visningen. Krever at admin skriver
+ * inn eventnavnet nøyaktig (ikke bare OK/Avbryt) siden dette er en
+ * ugjenkallelig kaskade-sletting av eventets kamper, resultater og roster.
+ */
+async function handterSlettEvent() {
+  const event = state.event;
+  if (!event) return;
+
+  const innskrevet = window.prompt(
+    `Dette sletter "${event.navn}" PERMANENT -- alle kamper, resultater, ` +
+    `puljer og roster for eventet forsvinner og kan IKKE gjenopprettes.\n\n` +
+    `Skriv inn eventnavnet nøyaktig for å bekrefte:`
+  );
+  if (innskrevet === null) return; // avbrutt
+  if (innskrevet.trim() !== event.navn) {
+    toast('Feil eventnavn skrevet inn -- sletting avbrutt.', 'error');
+    return;
+  }
+
+  try {
+    await repo.slettEvent(event.id);
+    toast(`"${event.navn}" er slettet.`);
+    state.event = null;
+    state.wizardSteg = 1;
+    await lastEvent();
+  } catch (e) {
+    console.error(e);
+    toast('Kunne ikke slette eventet: ' + e.message, 'error');
+  }
+}
+
+$('#slett-event-btn')?.addEventListener('click', handterSlettEvent);
+$('#slett-event-btn-2')?.addEventListener('click', handterSlettEvent);
+
 $('#opprett-event-btn').addEventListener('click', async () => {
   const navn = $('#nytt-event-navn').value.trim() || 'Racketslaget';
   const dato = $('#nytt-event-dato').value || null;
@@ -336,6 +371,8 @@ function renderSteg2() {
       toast('Fjernet fra roster.');
     });
   });
+
+  renderMasterSpillerListe();
 }
 
 $('#kvalifiseringsstatus-select').addEventListener('change', (e) => {
@@ -363,6 +400,59 @@ $('#opprett-spiller-btn').addEventListener('click', async () => {
   toast(`${navn} lagt til i klubbregisteret.`);
   await lastMasterSpillereOgRenderSteg2();
 });
+
+// --- Klubbregister: full oversikt + PERMANENT sletting av en master-spiller ---
+// (ikke å forveksle med "fjern fra roster" over, som kun rører DETTE eventets
+// roster og lar master-spilleren leve videre i klubbregisteret.)
+
+function renderMasterSpillerListe() {
+  const container = $('#master-spillere-liste');
+  if (!container) return; // element finnes ikke ennå i denne HTML-versjonen
+
+  if (state.masterSpillere.length === 0) {
+    container.innerHTML = '<p class="muted" style="font-size:13px;">Ingen spillere i klubbregisteret ennå.</p>';
+    return;
+  }
+
+  container.innerHTML = state.masterSpillere.map(s => {
+    const erIAktivtRoster = state.roster.some(r => r.spillerId === s.id || r.id === s.id);
+    return `
+      <div class="list-row">
+        <span>${escapeHtml(s.navn)}${erIAktivtRoster ? ' <span class="badge badge-warn">I aktivt roster</span>' : ''}</span>
+        <button class="btn btn-danger btn-small" data-slett-spiller="${s.id}">Slett</button>
+      </div>
+    `;
+  }).join('');
+
+  $$('#master-spillere-liste [data-slett-spiller]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const spillerId = btn.dataset.slettSpiller;
+      const spiller = state.masterSpillere.find(s => s.id === spillerId);
+      if (!spiller) return;
+
+      const erIAktivtRoster = state.roster.some(r => r.spillerId === spillerId || r.id === spillerId);
+      if (erIAktivtRoster) {
+        toast('Kan ikke slette -- spilleren står i det aktive eventets roster. Fjern fra roster først.', 'error');
+        return;
+      }
+
+      if (!bekreft(
+        `Slette ${spiller.navn} PERMANENT fra klubbregisteret?\n\n` +
+        `Dette kan ikke angres. Historiske eventer/champions som nevner ` +
+        `spilleren beholder navnet, men vil ikke lenger peke på et gyldig spillerdokument.`
+      )) return;
+
+      try {
+        await repo.slettSpillerHelt(spillerId);
+        toast(`${spiller.navn} slettet permanent.`);
+        await lastMasterSpillereOgRenderSteg2();
+      } catch (e) {
+        console.error(e);
+        toast('Kunne ikke slette spilleren: ' + e.message, 'error');
+      }
+    });
+  });
+}
 
 // --- Steg 3: Puljer (med manuell flytting) ---
 

@@ -73,6 +73,30 @@ export async function deaktiverSpiller(spillerId) {
   await updateDoc(doc(db, SPILLERE, spillerId), { aktiv: false });
 }
 
+/**
+ * Sletter en spiller PERMANENT fra master-registeret (seksten_spillere),
+ * inkludert historikk-subcollectionen. Dette er en hard delete -- i
+ * motsetning til deaktiverSpiller() (soft, reverserbar) og fjernFraRoster()
+ * (fjerner kun spilleren fra ETT events roster, rører ikke master-dokumentet).
+ *
+ * Sletter IKKE eventuelle referanser til spilleren i seksten_champions eller
+ * i et events kamper/leaderboard/roster (de bærer denormalisert navn og
+ * fortsetter å vise historiske resultater med navnet spilleren hadde --
+ * dette er en bevisst avveining slik at historiske eventer ikke "hull-etes"
+ * av en senere sletting). UI-et bør advare/blokkere sletting av en spiller
+ * som står i det AKTIVE eventets roster, for å unngå en spillerId i
+ * rosteret som ikke lenger peker på et gyldig master-dokument.
+ */
+export async function slettSpillerHelt(spillerId) {
+  const batch = writeBatch(db);
+
+  const historikkSnap = await getDocs(collection(db, SPILLERE, spillerId, 'historikk'));
+  historikkSnap.docs.forEach(d => batch.delete(d.ref));
+
+  batch.delete(doc(db, SPILLERE, spillerId));
+  await batch.commit();
+}
+
 export async function hentSpillerHistorikk(spillerId) {
   const q = query(
     collection(db, SPILLERE, spillerId, 'historikk'),
@@ -116,6 +140,47 @@ export function lyttEvent(eventId, cb) {
 
 export async function oppdaterEventStatus(eventId, nyStatus) {
   await updateDoc(doc(db, EVENTS, eventId), { status: nyStatus, oppdatert: serverTimestamp() });
+}
+
+/**
+ * Sletter et event PERMANENT, inkludert ALLE subcollections
+ * (puljer, spillere/roster, kamper, leaderboard, sluttspill) -- Firestore
+ * sletter aldri subcollections automatisk når foreldredokumentet slettes,
+ * så det må gjøres eksplisitt her, eller de blir liggende igjen som
+ * "foreldreløse" dokumenter appen aldri viser, men som fortsatt tar plass.
+ *
+ * Rører IKKE seksten_champions (championer beholdes i Hall of Fame selv om
+ * kilde-eventet slettes) eller seksten_spillere (master-spillerne lever
+ * uavhengig av eventer). Destruktivt og ugjenkallelig -- bekreft i UI før kall.
+ *
+ * Kjører i flere batcher (Firestore-batcher er begrenset til 500
+ * operasjoner) siden et event med mye historikk kan ha ganske mange
+ * kamp-dokumenter.
+ */
+export async function slettEvent(eventId) {
+  const eventRef = doc(db, EVENTS, eventId);
+
+  const subcollectionNavn = ['puljer', 'spillere', 'kamper', 'leaderboard', 'sluttspill'];
+  const alleRefs = [];
+  for (const navn of subcollectionNavn) {
+    const snap = await getDocs(collection(db, EVENTS, eventId, navn));
+    snap.docs.forEach(d => alleRefs.push(d.ref));
+  }
+  alleRefs.push(eventRef);
+
+  const BATCH_STORRELSE = 450; // god margin under Firestores grense på 500
+  for (let i = 0; i < alleRefs.length; i += BATCH_STORRELSE) {
+    const batch = writeBatch(db);
+    alleRefs.slice(i, i + BATCH_STORRELSE).forEach(ref => batch.delete(ref));
+    await batch.commit();
+  }
+
+  // Hvis dette var det live-aktive eventet, rydd også pekeren i seksten_live
+  // slik at TV Mode/Courts ikke fortsetter å lytte etter et event som er borte.
+  const liveSnap = await getDoc(doc(db, LIVE, 'aktivEvent'));
+  if (liveSnap.exists() && liveSnap.data().eventId === eventId) {
+    await setDoc(doc(db, LIVE, 'aktivEvent'), { eventId: null, gjeldendeRunde: null, sluttspillFase: 'none', oppdatert: serverTimestamp() });
+  }
 }
 
 export async function oppdaterEventFelt(eventId, felter) {

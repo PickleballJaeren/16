@@ -181,7 +181,9 @@ service cloud.firestore {
       allow update: if
         seksten_isString(request.resource.data.navn)
         && seksten_isBool(request.resource.data.aktiv);
-      allow delete: if false;
+      // Sletting tillatt fra admin.js (med bekreftelse i UI). Samme
+      // tillitsmodell som resten av filen -- se varselet øverst.
+      allow delete: if true;
 
       match /historikk/{eventId} {
         allow read: if true;
@@ -199,23 +201,30 @@ service cloud.firestore {
               'main_event', 'playoffs', 'completed']
         && request.resource.data.sluttspillFase in
              ['none', 'quarterfinal', 'semifinal', 'final', 'completed'];
-      allow delete: if false;
+      // Sletting tillatt (kaskade-slettes fra klienten -- se
+      // repo.slettEvent -- siden Firestore ikke sletter subcollections
+      // automatisk når foreldredokumentet slettes).
+      allow delete: if true;
 
       match /puljer/{puljeId} {
         allow read: if true;
-        allow write: if
+        allow create, update: if
           request.resource.data.spillerIds is list
           && request.resource.data.spillerIds.size() <= 4;
+        // Trengs for regenerering av puljetrekning OG for kaskade-sletting
+        // av et helt event (repo.slettEvent).
+        allow delete: if true;
       }
 
       match /spillere/{rosterSpillerId} {
         allow read: if true;
-        allow write: if
+        allow create, update: if
           request.resource.data.keys().hasAll(
                ['spillerId', 'navn', 'kvalifiseringsstatusKilde', 'qualifiedForNext'])
           && request.resource.data.kvalifiseringsstatusKilde in
                ['returning_top8', 'qualifier_winner', 'wildcard', 'admin_invite']
           && seksten_isBool(request.resource.data.qualifiedForNext);
+        allow delete: if true;
       }
 
       match /kamper/{kampId} {
@@ -228,20 +237,24 @@ service cloud.firestore {
           && request.resource.data.fase in ['pool', 'quarterfinal', 'semifinal', 'final'];
         allow update: if
           request.resource.data.status in ['scheduled', 'active', 'completed'];
-        allow delete: if false;
+        // Trengs for regenerering av kampoppsett (slettPuljespillKamper)
+        // OG for kaskade-sletting av et helt event (repo.slettEvent).
+        allow delete: if true;
       }
 
       match /leaderboard/{puljeId} {
         allow read: if true;
-        allow write: if
+        allow create, update: if
           request.resource.data.spillerStats is map;
+        allow delete: if true;
       }
 
       match /sluttspill/{fase} {
         allow read: if true;
-        allow write: if
+        allow create, update: if
           request.resource.data.kampIds is list
           && request.resource.data.bestAvSeire == 2;
+        allow delete: if true;
       }
     }
 
