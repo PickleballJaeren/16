@@ -16,7 +16,7 @@
 // cacher ryddes bort automatisk i activate-steget.
 // ============================================================================
 
-const CACHE_VERSION = 'v5';
+const CACHE_VERSION = 'v6';
 const APP_CACHE = `seksten-app-shell-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `seksten-runtime-${CACHE_VERSION}`;
 
