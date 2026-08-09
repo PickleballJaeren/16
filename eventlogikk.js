@@ -211,6 +211,48 @@ export function bestemKvalifiserte(rangeringPerPulje) {
   return kvalifiserte;
 }
 
+/**
+ * Regner ut sortert puljerangering fra de RÅ, atomisk oppdaterte tellerne i
+ * leaderboard-dokumentets `spillerStats`-felt (se firestore-repo.js sin
+ * registrerPuljeResultat — tellerne selv skrives med increment(), ALDRI
+ * lest-og-regnet-ut-på-nytt ved skriving, for å unngå race conditions når
+ * flere admin-enheter skriver samtidig). Denne funksjonen gjør selve
+ * sorteringen ved LESING, hvor race conditions ikke er et problem.
+ *
+ * @param {Object} spillerStats - { [spillerId]: { navn, seire, tap, poeng, poengforskjell } }
+ * @param {Array} kamperIPuljeForInnbyrdesOppgjor - fullførte kamper i puljen,
+ *   kun brukt for å avgjøre rekkefølge ved eksakt lik poeng+poengforskjell.
+ *   Kan utelates (tom liste) hvis innbyrdes oppgjør ikke trengs akkurat nå.
+ */
+export function sorterSpillerStats(spillerStats, kamperIPuljeForInnbyrdesOppgjor = []) {
+  const spillere = Object.entries(spillerStats ?? {}).map(([spillerId, s]) => ({
+    spillerId,
+    navn: s.navn ?? spillerId,
+    seire: s.seire ?? 0,
+    tap: s.tap ?? 0,
+    poeng: s.poeng ?? 0,
+    poengforskjell: s.poengforskjell ?? 0,
+  }));
+
+  const innbyrdesVinner = (aId, bId) => {
+    const oppgjor = kamperIPuljeForInnbyrdesOppgjor.find(
+      k => (k.spillerA === aId && k.spillerB === bId) || (k.spillerA === bId && k.spillerB === aId)
+    );
+    if (!oppgjor) return 0;
+    if (oppgjor.vinnerId === aId) return -1;
+    if (oppgjor.vinnerId === bId) return 1;
+    return 0;
+  };
+
+  spillere.sort((a, b) =>
+    b.poeng - a.poeng ||
+    b.poengforskjell - a.poengforskjell ||
+    innbyrdesVinner(a.spillerId, b.spillerId)
+  );
+
+  return spillere.map((s, i) => ({ ...s, rank: i + 1 }));
+}
+
 // ----------------------------------------------------------------------------
 // 3. SLUTTSPILL-SEEDING
 // ----------------------------------------------------------------------------

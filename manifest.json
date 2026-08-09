@@ -1,7 +1,7 @@
 {
-  "name": "16 — Klubbens beste allround racketspiller",
-  "short_name": "16",
-  "description": "3 disipliner. 1 mester.",
+  "name": "Racketslaget — Klubbens beste allround racketspiller",
+  "short_name": "Racketslaget",
+  "description": "16 spillere. 3 disipliner. 1 vinner.",
   "start_url": "./index.html",
   "scope": "./",
   "id": "/index.html",
@@ -18,7 +18,6 @@
   ],
   "shortcuts": [
     { "name": "Courts", "url": "./courts.html", "icons": [{ "src": "icon-192.png", "sizes": "192x192" }] },
-    { "name": "TV Mode", "url": "./tv.html", "icons": [{ "src": "icon-192.png", "sizes": "192x192" }] },
-    { "name": "Admin", "url": "./admin.html", "icons": [{ "src": "icon-192.png", "sizes": "192x192" }] }
+    { "name": "TV Mode", "url": "./tv.html", "icons": [{ "src": "icon-192.png", "sizes": "192x192" }] }
   ]
 }

@@ -3,50 +3,237 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>16</title>
+<title>Racketslaget — Admin</title>
 <link rel="stylesheet" href="styles.css">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap">
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#050f1f">
 <link rel="icon" type="image/png" href="favicon-32.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
+<style>
+  .klubb-logo { width:96px; height:96px; border-radius:50%; background:#fff; display:flex; align-items:center; justify-content:center; margin:0 auto 14px; overflow:hidden; }
+  .klubb-logo img { width:100%; height:100%; object-fit:cover; }
+  .step-nav { display:flex; gap:6px; overflow-x:auto; padding:4px 0 14px; }
+  .step-pill { flex:0 0 auto; display:flex; align-items:center; gap:6px; padding:8px 14px; border-radius:999px; border:1px solid var(--border2); background:transparent; color:var(--muted2); font-size:13px; font-weight:600; cursor:pointer; white-space:nowrap; }
+  .step-pill.active { background:var(--accent2); color:var(--navy); border-color:var(--accent2); }
+  .step-pill .num { width:18px; height:18px; border-radius:50%; background:rgba(255,255,255,0.15); display:flex; align-items:center; justify-content:center; font-size:11px; font-family:'DM Mono',monospace; }
+  .step-pill.active .num { background:rgba(5,15,31,0.25); }
+  .kategori-kort { margin-bottom:12px; }
+  .kategori-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
+  .teller-badge { font-family:'DM Mono',monospace; font-size:12px; padding:3px 10px; border-radius:999px; background:rgba(59,130,246,0.15); color:#3b82f6; }
+  .spiller-chip { display:inline-flex; align-items:center; gap:6px; background:var(--navy3); color:var(--white); font-size:12px; padding:5px 10px; border-radius:999px; margin:0 6px 6px 0; }
+  .spiller-chip button { background:none; border:none; color:var(--muted2); cursor:pointer; font-size:13px; padding:0; }
+  .pulje-flyt-kort { margin-bottom:10px; }
+  .pulje-spiller-rad { display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid var(--border); }
+  .pulje-spiller-rad:last-child { border-bottom:none; }
+  .flytt-meny { display:flex; gap:6px; margin-top:6px; }
+  .flytt-meny button { flex:1; padding:6px; font-size:11px; border-radius:8px; background:var(--navy3); border:1px solid var(--border2); color:var(--white); }
+  .sjekkliste-rad { display:flex; align-items:center; gap:8px; font-size:13px; padding:5px 0; }
+  .sjekkliste-rad .ok { color:var(--green2); }
+  .sjekkliste-rad .mangler { color:var(--muted); }
+</style>
 </head>
 <body>
 
-<div id="offline-indicator" class="offline-indicator" hidden>Ingen tilkobling.</div>
+<div id="offline-indicator" class="offline-indicator" hidden>
+  Ingen tilkobling — endringer lagres lokalt og synkroniseres når du er online igjen.
+</div>
 
-<div class="app-shell">
-  <div style="text-align:center; margin-bottom:10px;">
-    <h1 id="hjem-eventnavn" class="yellow-text">16</h1>
-    <p class="muted2" id="hjem-tagline">3 disipliner. 1 mester.</p>
-  </div>
+<!-- PIN-gate -->
+<div id="pin-gate" class="pin-gate" hidden>
+  <div class="klubb-logo"><img src="klubb-logo.png" alt="" onerror="this.style.display='none'"></div>
+  <h1>RACKETSLAGET</h1>
+  <p class="muted2" style="margin-bottom:24px;">16 spillere · 3 disipliner · 1 vinner</p>
+  <input id="pin-input" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" placeholder="••••">
+  <button id="pin-submit" class="btn btn-primary" style="max-width:220px;">Logg inn</button>
+  <p id="pin-feilmelding" class="badge badge-danger" style="margin-top:14px;" hidden></p>
+</div>
 
-  <div class="card" style="text-align:center;">
-    <p class="muted" style="font-size:12px; text-transform:uppercase; letter-spacing:1px; margin-bottom:4px;">Status</p>
-    <h2 id="hjem-status-badge" class="accent-text" style="font-size:32px; margin-bottom:6px;">—</h2>
-    <p id="hjem-event-navn" class="muted2" style="margin:0;"></p>
-    <p id="hjem-runde-info" class="mono muted2" style="margin-top:10px; font-size:20px;"></p>
+<!-- Selve appen -->
+<div id="dashboard" class="app-shell" hidden>
+
+  <div style="text-align:center; margin-bottom:6px;">
+    <div class="klubb-logo" style="width:64px; height:64px;"><img src="klubb-logo.png" alt="" onerror="this.style.display='none'"></div>
+    <h1 style="font-size:26px;">RACKETSLAGET</h1>
+    <p class="muted2 mono" id="dashboard-status-linje" style="font-size:12px;">Laster …</p>
   </div>
 
   <div class="btn-row" style="margin-bottom:18px;">
-    <a href="courts.html" style="flex:1; text-decoration:none;"><button class="btn btn-outline">Courts</button></a>
-    <a href="hall-of-fame.html" style="flex:1; text-decoration:none;"><button class="btn btn-outline">Hall of Fame</button></a>
-  </div>
-  <div class="btn-row" style="margin-bottom:18px;">
-    <a href="tv.html" style="flex:1; text-decoration:none;"><button class="btn btn-outline">📺 TV Mode</button></a>
+    <button id="del-app-btn" class="btn btn-outline btn-small" style="flex:1;">🔗 Del appen</button>
   </div>
 
-  <h2>Leaderboard</h2>
-  <div id="leaderboard-rot"></div>
+  <!-- ============ OPPSETTVEIVISER (før hovedeventet starter) ============ -->
+  <div id="wizard-rot" hidden>
+    <div class="step-nav" id="step-nav"></div>
 
-  <p style="text-align:center; margin-top:30px;">
-    <a href="admin.html" class="muted" style="font-size:12px; text-decoration:none;">Admin</a>
+    <!-- Steg 1: Event -->
+    <section id="steg-1" class="wizard-steg">
+      <div class="card">
+        <h2>Nytt event</h2>
+        <div class="field">
+          <label for="nytt-event-navn">Eventnavn</label>
+          <input id="nytt-event-navn" type="text" placeholder="Racketslaget – Event #1">
+        </div>
+        <div class="field">
+          <label for="nytt-event-dato">Dato</label>
+          <input id="nytt-event-dato" type="date">
+        </div>
+        <div class="card-inner" style="margin-bottom:16px;">
+          <b class="yellow-text">4 puljer</b> · lagstørrelse <b class="yellow-text">4+4+4+4</b> · <b class="yellow-text">3</b> disipliner
+        </div>
+        <button id="opprett-event-btn" class="btn btn-primary">Opprett event</button>
+        <button id="last-testdata-btn" class="btn btn-outline" style="margin-top:10px;">🧪 Last inn testdata (16 spillere)</button>
+        <p class="muted" style="font-size:12px; margin-top:8px;">
+          Oppretter et testevent med 16 realistiske spillere, ferdig fordelt i 4 puljer — for å teste
+          hele flyten uten å taste inn alt manuelt.
+        </p>
+      </div>
+      <div class="card" id="event-status-kort" hidden>
+        <h2 id="event-navn-visning">—</h2>
+        <p class="mono muted2" id="event-nummer-visning"></p>
+      </div>
+    </section>
+
+    <!-- Steg 2: Spillere -->
+    <section id="steg-2" class="wizard-steg" hidden>
+      <div class="card">
+        <h2>Spillere <span class="muted2 mono" id="roster-teller">(0/16)</span></h2>
+        <div class="field">
+          <label for="legg-til-roster-select">Legg til spiller</label>
+          <select id="legg-til-roster-select"></select>
+        </div>
+        <div class="field">
+          <label for="kvalifiseringsstatus-select">Kvalifiseringsstatus</label>
+          <select id="kvalifiseringsstatus-select">
+            <option value="returning_top8">Returning Top 8</option>
+            <option value="qualifier_winner">Qualifier Winner</option>
+            <option value="wildcard">Wildcard</option>
+            <option value="admin_invite">Admin Invite</option>
+          </select>
+        </div>
+        <div class="field" id="wildcard-begrunnelse-felt" hidden>
+          <label for="wildcard-begrunnelse-input">Begrunnelse (wildcard)</label>
+          <input id="wildcard-begrunnelse-input" type="text" placeholder="Valgfritt">
+        </div>
+        <button id="legg-til-roster-btn" class="btn btn-outline">Legg til</button>
+      </div>
+      <div id="roster-kategorier"></div>
+      <div class="card">
+        <h2>Ny spiller (finnes ikke i klubbregisteret ennå)</h2>
+        <div class="field">
+          <label for="ny-spiller-navn">Navn</label>
+          <input id="ny-spiller-navn" type="text" placeholder="Kari Nordmann">
+        </div>
+        <button id="opprett-spiller-btn" class="btn btn-outline">Legg til i klubbregisteret</button>
+      </div>
+    </section>
+
+    <!-- Steg 3: Puljer -->
+    <section id="steg-3" class="wizard-steg" hidden>
+      <div class="card">
+        <h2>Puljetrekning</h2>
+        <p class="muted" style="font-size:13px; margin-bottom:14px;">
+          Trekker rosteret (16 spillere) tilfeldig ned i 4 puljer à 4. Trykk på en spiller for å flytte
+          dem manuelt til en annen pulje.
+        </p>
+        <button id="trekk-puljer-btn" class="btn btn-outline">↻ Trekk puljer på nytt</button>
+      </div>
+      <div id="puljer-flyt-visning"></div>
+    </section>
+
+    <!-- Steg 4: Kampoppsett -->
+    <section id="steg-4" class="wizard-steg" hidden>
+      <div class="card">
+        <h2>Kampoppsett</h2>
+        <div class="btn-row">
+          <button id="generer-kampoppsett-btn" class="btn btn-primary">Generer kampoppsett</button>
+          <button id="regenerer-kampoppsett-btn" class="btn btn-danger" hidden>Regenerer</button>
+        </div>
+        <p id="kampoppsett-status" class="muted" style="margin-top:10px; font-size:13px;"></p>
+      </div>
+    </section>
+
+    <!-- Steg 5: Start -->
+    <section id="steg-5" class="wizard-steg" hidden>
+      <div class="card" style="text-align:center;">
+        <h2>Klar til start</h2>
+        <div id="start-sjekkliste" style="text-align:left; margin-bottom:18px;"></div>
+        <button id="start-hovedevent-btn" class="btn btn-primary">START HOVEDEVENTET</button>
+        <p id="start-arsaker" class="muted" style="margin-top:10px; font-size:13px;"></p>
+      </div>
+    </section>
+  </div>
+
+  <!-- ============ LØPENDE DASHBOARD (event er i gang / ferdig) ============ -->
+  <div id="live-dashboard-rot" hidden>
+    <div class="tabs">
+      <button class="tab-pill active" data-tab="kamper">Kamper</button>
+      <button class="tab-pill" data-tab="sluttspill">Sluttspill</button>
+      <button class="tab-pill" data-tab="leaderboard">Leaderboard</button>
+      <button class="tab-pill" data-tab="halloffame">Hall of Fame</button>
+      <button class="tab-pill" data-tab="event">Event</button>
+    </div>
+
+    <section id="panel-event" class="panel" hidden>
+      <div class="card">
+        <h2 id="event-navn-visning-2">—</h2>
+        <p class="mono muted2" id="event-nummer-visning-2"></p>
+        <p style="margin:14px 0;">Status: <span class="badge badge-accent" id="event-status-badge">—</span></p>
+        <div id="event-status-knapper" class="btn-row"></div>
+        <p id="event-status-arsaker" class="muted" style="margin-top:10px; font-size:13px;"></p>
+      </div>
+    </section>
+
+    <section id="panel-kamper" class="panel">
+      <div class="card">
+        <h2>Runde</h2>
+        <div class="tabs" style="padding:0; margin-bottom:14px;" id="runde-tabs"></div>
+        <div id="kamper-liste"></div>
+      </div>
+    </section>
+
+    <section id="panel-sluttspill" class="panel" hidden>
+      <div class="card">
+        <h2>Kvalifiserte spillere (Topp 8)</h2>
+        <div id="kvalifiserte-liste"></div>
+      </div>
+      <div class="card">
+        <h2>Sluttspill</h2>
+        <div id="sluttspill-kontroll"></div>
+        <div id="sluttspill-bracket" class="section-gap"></div>
+      </div>
+    </section>
+
+    <section id="panel-leaderboard" class="panel" hidden>
+      <div id="leaderboard-visning"></div>
+    </section>
+
+    <section id="panel-halloffame" class="panel" hidden>
+      <div class="card">
+        <h2>Registrer champion</h2>
+        <div class="field">
+          <label for="champion-spiller-select">Vinner</label>
+          <select id="champion-spiller-select"></select>
+        </div>
+        <button id="registrer-champion-btn" class="btn btn-primary">Registrer i Hall of Fame</button>
+      </div>
+      <div class="card">
+        <h2>Historikk</h2>
+        <div id="champions-liste"></div>
+      </div>
+    </section>
+  </div>
+
+  <p style="text-align:center; margin-top:24px;">
+    <a href="courts.html" class="muted" style="font-size:12px; text-decoration:none; margin-right:16px;">Courts →</a>
+    <a href="tv.html" class="muted" style="font-size:12px; text-decoration:none; margin-right:16px;">TV Mode →</a>
+    <a href="hall-of-fame.html" class="muted" style="font-size:12px; text-decoration:none;">Hall of Fame →</a>
   </p>
 </div>
 
 <div id="toast-rot"></div>
 
 <script src="register-sw.js"></script>
-<script type="module" src="home.js"></script>
+<script type="module" src="admin.js"></script>
 </body>
 </html>

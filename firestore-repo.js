@@ -14,10 +14,10 @@ import { db } from './firebase-init.js';
 import {
   collection, doc, getDoc, getDocs, setDoc, updateDoc, addDoc,
   query, where, orderBy, limit, onSnapshot,
-  writeBatch, serverTimestamp, getCountFromServer,
+  writeBatch, serverTimestamp, getCountFromServer, increment,
+  arrayUnion, arrayRemove,
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
-import { beregnPuljeRangering } from './eventlogikk.js';
 
 const EVENTS = 'seksten_events';
 const SPILLERE = 'seksten_spillere';
@@ -159,6 +159,16 @@ export async function flyttSpillerTilPulje(eventId, spillerId, nyPuljeId) {
 // Puljer (events/{id}/puljer)
 // ----------------------------------------------------------------------------
 
+/** Flytter en spiller fra én pulje til en annen — oppdaterer begge puljedokumentenes
+ *  spillerIds-lister OG rosterets puljeId-felt i én batch. */
+export async function byttSpillerPulje(eventId, spillerId, fraPuljeId, tilPuljeId) {
+  const batch = writeBatch(db);
+  batch.update(doc(db, EVENTS, eventId, 'puljer', fraPuljeId), { spillerIds: arrayRemove(spillerId) });
+  batch.update(doc(db, EVENTS, eventId, 'puljer', tilPuljeId), { spillerIds: arrayUnion(spillerId) });
+  batch.update(doc(db, EVENTS, eventId, 'spillere', spillerId), { puljeId: tilPuljeId });
+  await batch.commit();
+}
+
 export async function hentPuljer(eventId) {
   const snap = await getDocs(collection(db, EVENTS, eventId, 'puljer')); // maks 4
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -278,45 +288,32 @@ export async function settSuddenDeath(eventId, kampId) {
   await updateDoc(doc(db, EVENTS, eventId, 'kamper', kampId), { suddenDeath: true, 'timer.status': 'finished' });
 }
 
-// --- Resultatregistrering (puljespill) — SAMME transaksjon som leaderboard ---
+// --- Resultatregistrering (puljespill) ---
 
 /**
  * Registrerer sluttresultatet for en puljespill-kamp OG oppdaterer puljens
- * leaderboard-dokument i SAMME skriveoperasjon (batch), slik at leaderboardet
- * aldri kan komme ut av synk med kampresultatene.
+ * leaderboard-dokument i SAMME skriveoperasjon (batch) — TRYGT for flere
+ * samtidige admin-enheter, siden dette IKKE leser søsken-kampene i puljen
+ * først. Leaderboardet lagres som rå per-spiller-tellere
+ * (`spillerStats.{spillerId}.{seire,tap,poeng,poengforskjell}`), oppdatert
+ * med Firestores atomiske `increment()` — to admin-enheter som lagrer
+ * resultat for to ulike kamper i samme pulje SAMTIDIG kan aldri overskrive
+ * hverandres tall, siden increment() ikke krever å lese gjeldende verdi
+ * først (i motsetning til den forrige "les alle kamper → regn ut → skriv
+ * hele rangeringen på nytt"-tilnærmingen, som hadde et reelt race-vindu —
+ * relevant nå som appen deles mellom 2-3 admin-enheter samtidig).
  *
- * OBS teknisk begrensning: Firestore sin Web SDK støtter kun enkelt-
- * dokumentlesing (`transaction.get(ref)`) inni `runTransaction` — ikke
- * spørringer mot en subcollection. Vi kan derfor ikke gjøre HELE
- * les-og-skriv-syklusen ekte transaksjonell mot puljens 6 kampdokumenter.
- * Løsningen her henter puljens kamper rett før batch-skrivingen (ikke inni
- * en transaksjon) og skriver kamp+leaderboard atomisk sammen med
- * writeBatch(). Siden admin er den ENESTE som skriver resultater, og gjør
- * det fra ett dashboard om gangen, er race-vinduet i praksis neglisjerbart —
- * men vær oppmerksom på dette hvis appen senere åpnes for flere samtidige
- * admin-enheter, da bør en Cloud Function med Admin SDK (som STØTTER
- * transaksjonelle queries) overta denne skrivingen.
+ * Selve RANGERINGEN (sortert liste) regnes IKKE ut her — det gjøres ved
+ * LESING, av eventlogikk.sorterSpillerStats(), siden lesing ikke har noe
+ * race condition-problem. Se admin.js/tv.js for bruk.
  */
 export async function registrerPuljeResultat(eventId, kamp, { poengA, poengB, erOverstyring = false, rosterNavnMap = {} }) {
   const kampRef = doc(db, EVENTS, eventId, 'kamper', kamp.id);
   const leaderboardRef = doc(db, EVENTS, eventId, 'leaderboard', kamp.puljeId);
 
-  const vinnerId = poengA > poengB ? kamp.spillerA : kamp.spillerB;
+  const aVant = poengA > poengB;
+  const vinnerId = aVant ? kamp.spillerA : kamp.spillerB;
   const poengforskjell = Math.abs(poengA - poengB);
-  const oppdatertKamp = {
-    ...kamp, status: 'completed', poengA, poengB, vinnerId, poengforskjell,
-    overstyrtAvAdmin: erOverstyring || kamp.overstyrtAvAdmin === true,
-  };
-
-  // Avgrenset spørring (maks 6 dokumenter — én puljes kamper).
-  const puljeKampQuery = query(collection(db, EVENTS, eventId, 'kamper'), where('puljeId', '==', kamp.puljeId));
-  const puljeKampSnap = await getDocs(puljeKampQuery);
-  const alleKamperIPulje = puljeKampSnap.docs.map(d => (d.id === kamp.id ? oppdatertKamp : { id: d.id, ...d.data() }));
-
-  const spillerIdsIPulje = [...new Set(alleKamperIPulje.flatMap(k => [k.spillerA, k.spillerB]))];
-  const fullforte = alleKamperIPulje.filter(k => k.status === 'completed');
-  const rangering = beregnPuljeRangering(spillerIdsIPulje, fullforte)
-    .map(r => ({ ...r, navn: rosterNavnMap[r.spillerId] ?? r.spillerId }));
 
   const batch = writeBatch(db);
   batch.update(kampRef, {
@@ -325,9 +322,74 @@ export async function registrerPuljeResultat(eventId, kamp, { poengA, poengB, er
     'timer.status': 'finished',
   });
   batch.set(leaderboardRef, {
-    puljeId: kamp.puljeId, oppdatert: serverTimestamp(),
-    rangering: rangering.slice(0, 4),
+    puljeId: kamp.puljeId,
+    oppdatert: serverTimestamp(),
+    spillerStats: {
+      [kamp.spillerA]: {
+        navn: rosterNavnMap[kamp.spillerA] ?? kamp.spillerA,
+        seire: increment(aVant ? 1 : 0),
+        tap: increment(aVant ? 0 : 1),
+        poeng: increment(aVant ? 3 : 0),
+        poengforskjell: increment(poengA - poengB),
+      },
+      [kamp.spillerB]: {
+        navn: rosterNavnMap[kamp.spillerB] ?? kamp.spillerB,
+        seire: increment(aVant ? 0 : 1),
+        tap: increment(aVant ? 1 : 0),
+        poeng: increment(aVant ? 0 : 3),
+        poengforskjell: increment(poengB - poengA),
+      },
+    },
+  }, { merge: true }); // merge:true gjør et DYPT merge — increment() på én spillers felter påvirker ikke den andre
+  await batch.commit();
+}
+
+/**
+ * OVERSTYRING av et allerede lagret resultat — IKKE bruk registrerPuljeResultat
+ * for dette, siden increment() da ville dobbelttalt de opprinnelige poengene.
+ * Regner ut DIFFERANSEN mellom gammelt og nytt resultat og increment()-er med
+ * den, slik at sluttsummen blir riktig uansett rekkefølge andre skriv skjer i.
+ * `kamp` må inneholde de FORRIGE (før overstyring) poengA/poengB-verdiene.
+ */
+export async function overstyrPuljeResultat(eventId, kamp, { nyPoengA, nyPoengB, rosterNavnMap = {} }) {
+  if (kamp.status !== 'completed') {
+    return registrerPuljeResultat(eventId, kamp, { poengA: nyPoengA, poengB: nyPoengB, erOverstyring: true, rosterNavnMap });
+  }
+
+  const kampRef = doc(db, EVENTS, eventId, 'kamper', kamp.id);
+  const leaderboardRef = doc(db, EVENTS, eventId, 'leaderboard', kamp.puljeId);
+
+  const forrigeAVant = kamp.poengA > kamp.poengB;
+  const nyAVant = nyPoengA > nyPoengB;
+  const vinnerId = nyAVant ? kamp.spillerA : kamp.spillerB;
+
+  const seireADiff = (nyAVant ? 1 : 0) - (forrigeAVant ? 1 : 0);
+  const tapADiff = (nyAVant ? 0 : 1) - (forrigeAVant ? 0 : 1);
+  const poengADiff = (nyAVant ? 3 : 0) - (forrigeAVant ? 3 : 0);
+  const poengforskjellADiff = (nyPoengA - nyPoengB) - (kamp.poengA - kamp.poengB);
+
+  const batch = writeBatch(db);
+  batch.update(kampRef, {
+    poengA: nyPoengA, poengB: nyPoengB, vinnerId,
+    poengforskjell: Math.abs(nyPoengA - nyPoengB),
+    overstyrtAvAdmin: true,
   });
+  batch.set(leaderboardRef, {
+    puljeId: kamp.puljeId,
+    oppdatert: serverTimestamp(),
+    spillerStats: {
+      [kamp.spillerA]: {
+        navn: rosterNavnMap[kamp.spillerA] ?? kamp.spillerA,
+        seire: increment(seireADiff), tap: increment(tapADiff),
+        poeng: increment(poengADiff), poengforskjell: increment(poengforskjellADiff),
+      },
+      [kamp.spillerB]: {
+        navn: rosterNavnMap[kamp.spillerB] ?? kamp.spillerB,
+        seire: increment(-seireADiff), tap: increment(-tapADiff),
+        poeng: increment(-poengADiff), poengforskjell: increment(-poengforskjellADiff),
+      },
+    },
+  }, { merge: true });
   await batch.commit();
 }
 

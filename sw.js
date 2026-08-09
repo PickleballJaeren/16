@@ -16,19 +16,17 @@
 // cacher ryddes bort automatisk i activate-steget.
 // ============================================================================
 
-const CACHE_VERSION = 'v2';
+const CACHE_VERSION = 'v3';
 const APP_CACHE = `seksten-app-shell-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `seksten-runtime-${CACHE_VERSION}`;
 
 const APP_SHELL = [
   './',
   './index.html',
-  './admin.html',
   './courts.html',
   './tv.html',
   './hall-of-fame.html',
   './styles.css',
-  './home.js',
   './admin.js',
   './courts.js',
   './tv.js',

@@ -234,8 +234,7 @@ service cloud.firestore {
       match /leaderboard/{puljeId} {
         allow read: if true;
         allow write: if
-          request.resource.data.rangering is list
-          && request.resource.data.rangering.size() <= 4;
+          request.resource.data.spillerStats is map;
       }
 
       match /sluttspill/{fase} {

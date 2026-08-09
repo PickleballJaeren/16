@@ -8,6 +8,7 @@ import {
   sjekkForutsetninger,
   kanGaTil,
   beregnPuljeRangering,
+  sorterSpillerStats,
   bestemKvalifiserte,
   genererKvartfinaleOppsett,
   genererSemifinaleOppsett,
@@ -143,6 +144,33 @@ test('bestemKvalifiserte: topp 2 fra hver pulje, 8 totalt', () => {
   assert(kvalifiserte.length === 8);
   assert(kvalifiserte.every(k => k.qualifiedForNext === true));
   assert(kvalifiserte.filter(k => k.puljePlassering === 1).length === 4);
+});
+
+test('sorterSpillerStats: sorterer rå increment-tellere korrekt på poeng', () => {
+  const spillerStats = {
+    S1: { navn: 'Spiller 1', seire: 2, tap: 1, poeng: 6, poengforskjell: 10 },
+    S2: { navn: 'Spiller 2', seire: 3, tap: 0, poeng: 9, poengforskjell: 15 },
+    S3: { navn: 'Spiller 3', seire: 0, tap: 3, poeng: 0, poengforskjell: -20 },
+  };
+  const rangering = sorterSpillerStats(spillerStats);
+  assert(rangering[0].spillerId === 'S2', 'S2 har flest poeng og skal ligge først');
+  assert(rangering[0].rank === 1);
+  assert(rangering[2].spillerId === 'S3', 'S3 har færrest poeng og skal ligge sist');
+});
+
+test('sorterSpillerStats: bruker innbyrdes oppgjør ved lik poeng og poengforskjell', () => {
+  const spillerStats = {
+    S1: { navn: 'Spiller 1', seire: 1, tap: 0, poeng: 3, poengforskjell: 5 },
+    S2: { navn: 'Spiller 2', seire: 1, tap: 0, poeng: 3, poengforskjell: 5 },
+  };
+  const kamper = [{ spillerA: 'S1', spillerB: 'S2', vinnerId: 'S1', status: 'completed' }];
+  const rangering = sorterSpillerStats(spillerStats, kamper);
+  assert(rangering[0].spillerId === 'S1', 'S1 vant det direkte oppgjøret og skal rangeres først');
+});
+
+test('sorterSpillerStats: håndterer manglende felter (nye spillere uten kamper ennå)', () => {
+  const rangering = sorterSpillerStats({ S1: { navn: 'Ny spiller' } });
+  assert(rangering[0].seire === 0 && rangering[0].poeng === 0, 'Manglende tellere skal defaulte til 0, ikke kaste feil');
 });
 
 // ----------------------------------------------------------------------------

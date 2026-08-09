@@ -1,5 +1,13 @@
 // ============================================================================
-// admin.js — "16"
+// admin.js — "Racketslaget"
+//
+// Forsiden ER admin-appen (PIN-beskyttet fra start). Tilskuere/spillere
+// dekkes utelukkende av courts.html/tv.html/hall-of-fame.html — ikke denne
+// siden. To modus, styrt av event.status:
+//   - WIZARD (draft/registration_open/registration_closed): stegvis oppsett,
+//     fritt navigerbart mellom steg 1-5.
+//   - LIVE DASHBOARD (main_event/playoffs/completed): det løpende arbeidet
+//     under selve eventet (kamper, sluttspill, leaderboard, Hall of Fame).
 // ============================================================================
 
 import { paAuthEndring, loggInnSomAdmin } from './auth.js';
@@ -15,6 +23,11 @@ const BANER = {
   speedminton: ['Speedminton 1', 'Speedminton 2'],
 };
 const KAMPVARIGHET_PULJESPILL_MIN = 10;
+const PULJE_IDER = ['A', 'B', 'C', 'D'];
+const STATUS_KILDE_LABEL = {
+  returning_top8: 'Returning Top 8', qualifier_winner: 'Qualifier Winner',
+  wildcard: 'Wildcard', admin_invite: 'Admin Invite',
+};
 
 const state = {
   erAdmin: false,
@@ -24,12 +37,13 @@ const state = {
   puljer: [],
   gjeldendeRundeVisning: 1,
   kamperIRunde: [],
-  leaderboards: [],
   champions: [],
+  wizardSteg: 1,
+  apenFlyttMeny: null, // spillerId hvis en "flytt til pulje"-meny er åpen
 };
 
 // ----------------------------------------------------------------------------
-// Småhjelpere: DOM, toast, bekreftelse
+// Småhjelpere
 // ----------------------------------------------------------------------------
 
 const $ = (sel) => document.querySelector(sel);
@@ -44,7 +58,6 @@ function toast(melding, type = 'success') {
 }
 
 function bekreft(melding) {
-  // Alle kritiske/destruktive handlinger skal ha bekreftelse (jf. spesifikasjonen).
   return window.confirm(melding);
 }
 
@@ -53,6 +66,25 @@ function initialFarge(navn) {
   let sum = 0;
   for (const c of navn) sum += c.charCodeAt(0);
   return paletter[sum % paletter.length];
+}
+
+function escapeHtml(str) {
+  return String(str ?? '').replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[c]));
+}
+
+function shuffle(arr) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+function navnFraId(id) {
+  return state.roster.find(r => r.id === id)?.navn ?? state.masterSpillere.find(s => s.id === id)?.navn ?? id;
 }
 
 // ----------------------------------------------------------------------------
@@ -67,22 +99,20 @@ window.addEventListener('offline', oppdaterOfflineIndikator);
 oppdaterOfflineIndikator();
 
 // ----------------------------------------------------------------------------
-// Tabs
+// Del appen
 // ----------------------------------------------------------------------------
 
-$$('.tab-pill').forEach(btn => {
-  btn.addEventListener('click', () => visTab(btn.dataset.tab));
+$('#del-app-btn').addEventListener('click', async () => {
+  const delData = { title: 'Racketslaget — Admin', text: 'Bli med og administrer Racketslaget', url: location.href };
+  if (navigator.share) {
+    try { await navigator.share(delData); } catch { /* avbrutt av bruker, ikke en feil */ }
+  } else if (navigator.clipboard) {
+    await navigator.clipboard.writeText(location.href);
+    toast('Lenke kopiert — send den til de som skal hjelpe til.');
+  } else {
+    toast(location.href);
+  }
 });
-
-function visTab(navn) {
-  $$('.tab-pill').forEach(b => b.classList.toggle('active', b.dataset.tab === navn));
-  $$('.panel').forEach(p => p.hidden = p.id !== `panel-${navn}`);
-  if (navn === 'spillere') lastSpillereTab();
-  if (navn === 'kamper') lastKamperTab();
-  if (navn === 'sluttspill') lastSluttspillTab();
-  if (navn === 'leaderboard') lastLeaderboardTab();
-  if (navn === 'halloffame') lastHallOfFameTab();
-}
 
 // ----------------------------------------------------------------------------
 // Auth / PIN-gate
@@ -112,95 +142,149 @@ let dashboardStartet = false;
 async function startDashboard() {
   if (dashboardStartet) return;
   dashboardStartet = true;
-
-  const innstillinger = await repo.hentInnstillinger();
-  if (innstillinger) {
-    $('#dashboard-tittel').textContent = `${innstillinger.eventNavn} — Admin`;
-    $('#pin-event-navn').textContent = innstillinger.eventNavn;
-  }
-
-  await lastEventTab();
+  await lastEvent();
 }
 
 // ----------------------------------------------------------------------------
-// EVENT-fanen
+// Event-lasting og modusvalg (wizard vs. live dashboard)
 // ----------------------------------------------------------------------------
 
-async function lastEventTab() {
+async function lastEvent() {
   const siste = await repo.hentSisteEventer(1);
   if (siste.length === 0) {
-    $('#ingen-event-kort').hidden = false;
-    $('#event-status-kort').hidden = true;
+    state.event = null;
+    visModus();
     return;
   }
-  $('#ingen-event-kort').hidden = true;
-  $('#event-status-kort').hidden = false;
   repo.lyttEvent(siste[0].id, async (event) => {
     state.event = event;
     if (!event) return;
-    renderEventStatus(event);
-    await lastRosterOgPuljer();
+    if (!state.roster.length && !state._rosterLastet) {
+      state._rosterLastet = true;
+      repo.lyttRoster(event.id, (roster) => {
+        state.roster = roster.filter(r => !r.fjernet);
+        if (erWizardModus()) renderWizardSteg();
+      });
+      state.puljer = await repo.hentPuljer(event.id);
+    }
+    visModus();
   });
 }
 
+function erWizardModus() {
+  return !state.event || ['draft', 'registration_open', 'registration_closed'].includes(state.event.status);
+}
+
+function visModus() {
+  const status = state.event?.status;
+  $('#dashboard-status-linje').textContent = state.event
+    ? `${state.event.navn} · ${logikk.STATUS_VISNINGSNAVN[status] ?? status}`
+    : 'Ingen event opprettet ennå';
+
+  const wizard = erWizardModus();
+  $('#wizard-rot').hidden = !wizard;
+  $('#live-dashboard-rot').hidden = wizard;
+
+  if (wizard) {
+    renderStepNav();
+    renderWizardSteg();
+  } else {
+    visTab($('.tab-pill.active')?.dataset.tab ?? 'kamper');
+  }
+}
+
+// ============================================================================
+// OPPSETTVEIVISER
+// ============================================================================
+
+const STEG_NAVN = { 1: 'Event', 2: 'Spillere', 3: 'Puljer', 4: 'Kamper', 5: 'Start' };
+
+function renderStepNav() {
+  $('#step-nav').innerHTML = [1, 2, 3, 4, 5].map(n => `
+    <button class="step-pill ${n === state.wizardSteg ? 'active' : ''}" data-steg="${n}">
+      <span class="num">${n}</span>${STEG_NAVN[n]}
+    </button>
+  `).join('');
+  $$('.step-pill').forEach(btn => {
+    btn.addEventListener('click', () => {
+      state.wizardSteg = Number(btn.dataset.steg);
+      renderStepNav();
+      renderWizardSteg();
+    });
+  });
+}
+
+function renderWizardSteg() {
+  [1, 2, 3, 4, 5].forEach(n => { $(`#steg-${n}`).hidden = n !== state.wizardSteg; });
+
+  if (state.wizardSteg === 1) renderSteg1();
+  if (state.wizardSteg === 2) { lastMasterSpillereOgRenderSteg2(); }
+  if (state.wizardSteg === 3) renderSteg3();
+  if (state.wizardSteg === 4) renderSteg4();
+  if (state.wizardSteg === 5) renderSteg5();
+}
+
+// --- Steg 1: Event ---
+
+function renderSteg1() {
+  $('#event-status-kort').hidden = !state.event;
+  if (state.event) {
+    $('#event-navn-visning').textContent = state.event.navn;
+    $('#event-nummer-visning').textContent = `Event #${state.event.eventNummer}`;
+    $('#nytt-event-navn').value = state.event.navn;
+  }
+}
+
 $('#opprett-event-btn').addEventListener('click', async () => {
-  const navn = $('#nytt-event-navn').value.trim() || '16';
+  const navn = $('#nytt-event-navn').value.trim() || 'Racketslaget';
   const dato = $('#nytt-event-dato').value || null;
-  const { id } = await repo.opprettEvent({
+  await repo.opprettEvent({
     navn, dato,
     config: {
       antallPuljer: 4, spillerePerPulje: 4,
-      kampVarighetPuljespillMin: KAMPVARIGHET_PULJESPILL_MIN,
-      kampVarighetSluttspillMin: 6,
+      kampVarighetPuljespillMin: KAMPVARIGHET_PULJESPILL_MIN, kampVarighetSluttspillMin: 6,
       disipliner: DISIPLINER, baner: Object.values(BANER).flat(),
     },
   });
   toast('Event opprettet.');
-  await lastEventTab();
+  state.wizardSteg = 2;
+  await lastEvent();
 });
 
 $('#last-testdata-btn').addEventListener('click', async () => {
   if (!bekreft('Opprette et testevent med 16 testspillere, ferdig fordelt i 4 puljer? Dette oppretter ekte dokumenter i Firestore (tydelig merket som testdata).')) return;
-
   $('#last-testdata-btn').disabled = true;
   try {
     toast('Oppretter testspillere …');
-    const idKart = {}; // testdata.js sin id (f.eks. "p1") -> ekte Firestore-spillerId
+    const idKart = {};
     for (const s of TESTSPILLERE) {
       const spillerId = await repo.opprettSpiller({ navn: `${s.navn} (test)`, farge: initialFarge(s.navn) });
       idKart[s.id] = spillerId;
     }
-
     toast('Oppretter testevent …');
     const { id: eventId } = await repo.opprettEvent({
-      navn: '16 — Testevent', dato: new Date().toISOString().slice(0, 10),
+      navn: 'Racketslaget — Testevent', dato: new Date().toISOString().slice(0, 10),
       config: {
         antallPuljer: 4, spillerePerPulje: 4,
         kampVarighetPuljespillMin: KAMPVARIGHET_PULJESPILL_MIN, kampVarighetSluttspillMin: 6,
         disipliner: DISIPLINER, baner: Object.values(BANER).flat(),
       },
     });
-
     toast('Legger spillere i roster …');
     for (const s of TESTSPILLERE) {
       await repo.leggTilIRoster(eventId, idKart[s.id], {
-        navn: `${s.navn} (test)`,
-        kvalifiseringsstatusKilde: s.kvalifiseringsstatusKilde,
-        wildcardBegrunnelse: s.wildcardBegrunnelse,
+        navn: `${s.navn} (test)`, kvalifiseringsstatusKilde: s.kvalifiseringsstatusKilde, wildcardBegrunnelse: s.wildcardBegrunnelse,
       });
     }
-
     toast('Trekker puljer …');
     const puljer = TESTPULJER.map(p => ({ id: p.id, navn: p.navn, spillerIds: p.spillerIds.map(sid => idKart[sid]) }));
     await repo.lagrePuljer(eventId, puljer);
     for (const p of puljer) {
-      for (const spillerId of p.spillerIds) {
-        await repo.flyttSpillerTilPulje(eventId, spillerId, p.id);
-      }
+      for (const spillerId of p.spillerIds) await repo.flyttSpillerTilPulje(eventId, spillerId, p.id);
     }
-
-    toast('Testdata lastet inn! Åpne Spillere-fanen for å se rosteret.');
-    await lastEventTab();
+    toast('Testdata lastet inn!');
+    state.wizardSteg = 4;
+    await lastEvent();
   } catch (e) {
     console.error(e);
     toast('Kunne ikke laste inn testdata: ' + e.message, 'error');
@@ -209,10 +293,233 @@ $('#last-testdata-btn').addEventListener('click', async () => {
   }
 });
 
-function renderEventStatus(event) {
-  $('#event-navn-visning').textContent = event.navn;
-  $('#event-nummer-visning').textContent = `Event #${event.eventNummer}`;
-  $('#dashboard-status-linje').textContent = `${event.navn} · ${logikk.STATUS_VISNINGSNAVN[event.status]}`;
+// --- Steg 2: Spillere ---
+
+async function lastMasterSpillereOgRenderSteg2() {
+  if (!state.event) { renderIkkeKlarSteg('steg-2', 'Opprett et event i Steg 1 først.'); return; }
+  state.masterSpillere = await repo.hentAlleAktiveSpillere();
+  renderSteg2();
+}
+
+function renderIkkeKlarSteg(stegId, melding) {
+  $(`#${stegId}`).innerHTML = `<div class="card"><p class="muted">${escapeHtml(melding)}</p></div>`;
+}
+
+function renderSteg2() {
+  const select = $('#legg-til-roster-select');
+  select.innerHTML = '<option value="">Velg spiller …</option>' +
+    state.masterSpillere.filter(s => !state.roster.some(r => r.id === s.id))
+      .map(s => `<option value="${s.id}">${escapeHtml(s.navn)}</option>`).join('');
+
+  $('#roster-teller').textContent = `(${state.roster.length}/16)`;
+
+  const kategorier = ['returning_top8', 'qualifier_winner', 'wildcard', 'admin_invite'];
+  $('#roster-kategorier').innerHTML = kategorier.map(kat => {
+    const spillereIKat = state.roster.filter(r => r.kvalifiseringsstatusKilde === kat);
+    return `
+      <div class="card kategori-kort">
+        <div class="kategori-header">
+          <h2 style="margin:0;">${STATUS_KILDE_LABEL[kat]}</h2>
+          <span class="teller-badge">${spillereIKat.length}</span>
+        </div>
+        ${spillereIKat.map(r => `
+          <span class="spiller-chip">${escapeHtml(r.navn)}<button data-fjern="${r.id}" aria-label="Fjern">✕</button></span>
+        `).join('') || '<p class="muted" style="font-size:13px;">Ingen ennå.</p>'}
+      </div>
+    `;
+  }).join('');
+
+  $$('#roster-kategorier [data-fjern]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!bekreft(`Fjerne ${navnFraId(btn.dataset.fjern)} fra rosteret?`)) return;
+      await repo.fjernFraRoster(state.event.id, btn.dataset.fjern);
+      toast('Fjernet fra roster.');
+    });
+  });
+}
+
+$('#kvalifiseringsstatus-select').addEventListener('change', (e) => {
+  $('#wildcard-begrunnelse-felt').hidden = e.target.value !== 'wildcard';
+});
+
+$('#legg-til-roster-btn').addEventListener('click', async () => {
+  if (!state.event) { toast('Opprett et event først.', 'error'); return; }
+  const spillerId = $('#legg-til-roster-select').value;
+  if (!spillerId) return;
+  if (state.roster.length >= 16) { toast('Rosteret har allerede 16 spillere.', 'error'); return; }
+  const spiller = state.masterSpillere.find(s => s.id === spillerId);
+  const kilde = $('#kvalifiseringsstatus-select').value;
+  const begrunnelse = $('#wildcard-begrunnelse-input').value.trim() || null;
+  await repo.leggTilIRoster(state.event.id, spillerId, { navn: spiller.navn, kvalifiseringsstatusKilde: kilde, wildcardBegrunnelse: begrunnelse });
+  toast(`${spiller.navn} lagt til.`);
+  await lastMasterSpillereOgRenderSteg2();
+});
+
+$('#opprett-spiller-btn').addEventListener('click', async () => {
+  const navn = $('#ny-spiller-navn').value.trim();
+  if (!navn) return;
+  await repo.opprettSpiller({ navn, farge: initialFarge(navn) });
+  $('#ny-spiller-navn').value = '';
+  toast(`${navn} lagt til i klubbregisteret.`);
+  await lastMasterSpillereOgRenderSteg2();
+});
+
+// --- Steg 3: Puljer (med manuell flytting) ---
+
+function renderSteg3() {
+  if (!state.event) { renderIkkeKlarSteg('steg-3', 'Opprett et event og legg til spillere først.'); return; }
+  renderPuljerFlytVisning();
+}
+
+$('#trekk-puljer-btn').addEventListener('click', async () => {
+  if (state.roster.length !== 16) { toast('Trenger nøyaktig 16 spillere i rosteret først.', 'error'); return; }
+  if (!bekreft('Trekke nye puljer? Dette overskriver eventuell eksisterende puljeinndeling.')) return;
+  const blandet = shuffle(state.roster.map(r => r.id));
+  const puljer = PULJE_IDER.map((navn, i) => ({ id: navn, navn: `Pulje ${navn}`, spillerIds: blandet.slice(i * 4, i * 4 + 4) }));
+  await repo.lagrePuljer(state.event.id, puljer);
+  for (const p of puljer) {
+    for (const spillerId of p.spillerIds) await repo.flyttSpillerTilPulje(state.event.id, spillerId, p.id);
+  }
+  state.puljer = puljer;
+  toast('Puljer trukket.');
+  renderPuljerFlytVisning();
+});
+
+function renderPuljerFlytVisning() {
+  if (state.puljer.length !== 4) {
+    $('#puljer-flyt-visning').innerHTML = '<p class="muted">Ingen puljer trukket ennå.</p>';
+    return;
+  }
+  $('#puljer-flyt-visning').innerHTML = state.puljer.map(p => `
+    <div class="card pulje-flyt-kort">
+      <h3>Pulje ${p.id}</h3>
+      ${p.spillerIds.map(id => {
+        const spiller = state.roster.find(r => r.id === id);
+        const navn = spiller ? spiller.navn : id;
+        const menyApen = state.apenFlyttMeny === id;
+        return `
+          <div class="pulje-spiller-rad">
+            <span>${escapeHtml(navn)}</span>
+            <button class="btn btn-outline btn-small" data-flytt-spiller="${id}" data-fra-pulje="${p.id}">Flytt</button>
+          </div>
+          ${menyApen ? `
+            <div class="flytt-meny">
+              ${PULJE_IDER.filter(pid => pid !== p.id).map(pid => `<button data-mal-pulje="${pid}" data-mal-spiller="${id}" data-mal-fra="${p.id}">→ ${pid}</button>`).join('')}
+            </div>
+          ` : ''}
+        `;
+      }).join('')}
+    </div>
+  `).join('');
+
+  $$('[data-flytt-spiller]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.flyttSpiller;
+      state.apenFlyttMeny = state.apenFlyttMeny === id ? null : id;
+      renderPuljerFlytVisning();
+    });
+  });
+  $$('[data-mal-pulje]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const spillerId = btn.dataset.malSpiller;
+      const fraPuljeId = btn.dataset.malFra;
+      const tilPuljeId = btn.dataset.malPulje;
+      await repo.byttSpillerPulje(state.event.id, spillerId, fraPuljeId, tilPuljeId);
+      const fra = state.puljer.find(p => p.id === fraPuljeId);
+      const til = state.puljer.find(p => p.id === tilPuljeId);
+      fra.spillerIds = fra.spillerIds.filter(id => id !== spillerId);
+      til.spillerIds.push(spillerId);
+      state.apenFlyttMeny = null;
+      toast(`${navnFraId(spillerId)} flyttet til Pulje ${tilPuljeId}.`);
+      renderPuljerFlytVisning();
+    });
+  });
+}
+
+// --- Steg 4: Kampoppsett ---
+
+function renderSteg4() {
+  if (!state.event) { renderIkkeKlarSteg('steg-4', 'Opprett et event og trekk puljer først.'); return; }
+  const generert = state.event.kampoppsettGenerertOgValidert === true;
+  $('#generer-kampoppsett-btn').hidden = generert;
+  $('#regenerer-kampoppsett-btn').hidden = !generert;
+  $('#kampoppsett-status').textContent = generert ? 'Kampoppsett er generert og validert. ✓' : 'Kampoppsett er ikke generert ennå.';
+}
+
+$('#generer-kampoppsett-btn').addEventListener('click', () => genererOgLagreKampoppsett());
+$('#regenerer-kampoppsett-btn').addEventListener('click', async () => {
+  if (!bekreft('Regenerere kampoppsettet? Alle registrerte puljespill-resultater slettes.')) return;
+  await repo.slettPuljespillKamper(state.event.id);
+  await genererOgLagreKampoppsett();
+});
+
+async function genererOgLagreKampoppsett() {
+  if (state.puljer.length !== 4) { toast('Trekk puljer først (Steg 3).', 'error'); return; }
+  const navnMap = Object.fromEntries(state.roster.map(r => [r.id, r.navn]));
+  try {
+    const kamper = genererKampoppsett({ puljer: state.puljer, disipliner: DISIPLINER, baner: BANER });
+    const medNavn = kamper.map(k => ({ ...k, spillerANavn: navnMap[k.spillerA] ?? k.spillerA, spillerBNavn: navnMap[k.spillerB] ?? k.spillerB }));
+    await repo.lagreKampoppsett(state.event.id, medNavn);
+    toast('Kampoppsett generert og lagret.');
+    await lastEvent();
+  } catch (e) {
+    console.error(e);
+    toast('Kunne ikke generere et gyldig kampoppsett: ' + e.message, 'error');
+  }
+}
+
+// --- Steg 5: Start ---
+
+function renderSteg5() {
+  if (!state.event) { renderIkkeKlarSteg('steg-5', 'Fullfør Steg 1-4 først.'); return; }
+
+  const rosterOk = state.roster.length === 16;
+  const puljerOk = state.puljer.length === 4;
+  const kampoppsettOk = state.event.kampoppsettGenerertOgValidert === true;
+
+  $('#start-sjekkliste').innerHTML = `
+    <div class="sjekkliste-rad"><span class="${rosterOk ? 'ok' : 'mangler'}">${rosterOk ? '✓' : '○'}</span> 16 spillere lagt til (${state.roster.length}/16)</div>
+    <div class="sjekkliste-rad"><span class="${puljerOk ? 'ok' : 'mangler'}">${puljerOk ? '✓' : '○'}</span> Puljer trukket</div>
+    <div class="sjekkliste-rad"><span class="${kampoppsettOk ? 'ok' : 'mangler'}">${kampoppsettOk ? '✓' : '○'}</span> Kampoppsett generert og validert</div>
+  `;
+
+  const sjekk = logikk.sjekkForutsetninger('main_event', { puljer: state.puljer, kampoppsettGenerertOgValidert: kampoppsettOk });
+  $('#start-hovedevent-btn').disabled = !sjekk.tillatt || !rosterOk;
+  $('#start-arsaker').textContent = (!rosterOk ? 'Mangler spillere i rosteret. ' : '') + sjekk.arsaker.join(' ');
+}
+
+$('#start-hovedevent-btn').addEventListener('click', async () => {
+  if (!bekreft('Starte hovedeventet? Kampoppsettet blir låst og eventet går live.')) return;
+  await repo.oppdaterEventStatus(state.event.id, 'main_event');
+  await repo.settAktivtEvent(state.event.id, 1, 'none');
+  toast('Hovedeventet er startet!');
+  await lastEvent();
+});
+
+// ============================================================================
+// LØPENDE DASHBOARD (event er main_event / playoffs / completed)
+// ============================================================================
+
+$$('.tab-pill').forEach(btn => {
+  btn.addEventListener('click', () => visTab(btn.dataset.tab));
+});
+
+function visTab(navn) {
+  $$('.tab-pill').forEach(b => b.classList.toggle('active', b.dataset.tab === navn));
+  $$('.panel').forEach(p => p.hidden = p.id !== `panel-${navn}`);
+  if (navn === 'event') renderEventTab();
+  if (navn === 'kamper') lastKamperTab();
+  if (navn === 'sluttspill') lastSluttspillTab();
+  if (navn === 'leaderboard') lastLeaderboardTab();
+  if (navn === 'halloffame') lastHallOfFameTab();
+}
+
+// --- Event-fanen (i det løpende dashbordet) ---
+
+function renderEventTab() {
+  const event = state.event;
+  $('#event-navn-visning-2').textContent = event.navn;
+  $('#event-nummer-visning-2').textContent = `Event #${event.eventNummer}`;
   const badge = $('#event-status-badge');
   badge.textContent = logikk.STATUS_VISNINGSNAVN[event.status];
 
@@ -236,7 +543,7 @@ function renderEventStatus(event) {
     knapper.appendChild(btn);
     if (!sjekk.tillatt) arsakEl.textContent = sjekk.arsaker.join(' ');
   }
-  if (forrige && logikk.erLovligOvergang(event.status, forrige)) {
+  if (forrige && logikk.erLovligOvergang(event.status, forrige) && event.status !== 'main_event') {
     const btn = document.createElement('button');
     btn.className = 'btn btn-outline btn-small';
     btn.textContent = `← ${logikk.STATUS_VISNINGSNAVN[forrige]}`;
@@ -250,18 +557,8 @@ function renderEventStatus(event) {
 }
 
 function byggStatusKontekst(tilStatus) {
-  if (tilStatus === 'registration_closed') {
-    return { antallRegistrerteSpillere: state.roster.length };
-  }
-  if (tilStatus === 'main_event') {
-    return { puljer: state.puljer, kampoppsettGenerertOgValidert: state.event?.kampoppsettGenerertOgValidert === true };
-  }
-  if (tilStatus === 'playoffs') {
-    return { puljespillKamper: state.alleKamperCache ?? [] };
-  }
-  if (tilStatus === 'completed') {
-    return { finaleSerie: state.finaleSerieCache ?? null };
-  }
+  if (tilStatus === 'playoffs') return { puljespillKamper: state.alleKamperCache ?? [] };
+  if (tilStatus === 'completed') return { finaleSerie: state.finaleSerieCache ?? null };
   return {};
 }
 
@@ -275,164 +572,22 @@ async function gaTilStatus(tilStatus) {
   if (tilStatus === 'completed') {
     const finaleKamper = await repo.hentKamperForFase(state.event.id, 'final');
     const finaleDoc = await repo.hentSluttspillFase(state.event.id, 'final');
-    const serie = finaleDoc
-      ? logikk.beregnSerieStatus(finaleDoc.spillerA, finaleDoc.spillerB, finaleKamper)
-      : null;
+    const serie = finaleDoc ? logikk.beregnSerieStatus(finaleDoc.spillerA, finaleDoc.spillerB, finaleKamper) : null;
     state.finaleSerieCache = serie;
     kontekst = { finaleSerie: serie };
   }
   const sjekk = logikk.sjekkForutsetninger(tilStatus, kontekst);
-  if (!sjekk.tillatt) {
-    toast(sjekk.arsaker.join(' '), 'error');
-    return;
-  }
+  if (!sjekk.tillatt) { toast(sjekk.arsaker.join(' '), 'error'); return; }
   if (!bekreft(`Gå videre til "${logikk.STATUS_VISNINGSNAVN[tilStatus]}"?`)) return;
   await repo.oppdaterEventStatus(state.event.id, tilStatus);
   toast('Status oppdatert.');
-
-  if (tilStatus === 'main_event') {
-    state.gjeldendeRundeVisning = 1;
-    await repo.settAktivtEvent(state.event.id, 1, 'none');
-  }
-  if (tilStatus === 'playoffs') {
-    await settOppKvartfinaler();
-  }
+  if (tilStatus === 'playoffs') await settOppKvartfinaler();
 }
 
-// ----------------------------------------------------------------------------
-// SPILLERE-fanen
-// ----------------------------------------------------------------------------
-
-async function lastRosterOgPuljer() {
-  if (!state.event) return;
-  repo.lyttRoster(state.event.id, (roster) => {
-    state.roster = roster.filter(r => !r.fjernet);
-    renderRosterListe();
-    renderEventStatus(state.event);
-  });
-  state.puljer = await repo.hentPuljer(state.event.id);
-  renderPuljerVisning();
-}
-
-async function lastSpillereTab() {
-  state.masterSpillere = await repo.hentAlleAktiveSpillere();
-  const select = $('#legg-til-roster-select');
-  select.innerHTML = '<option value="">Velg spiller …</option>' +
-    state.masterSpillere
-      .filter(s => !state.roster.some(r => r.id === s.id))
-      .map(s => `<option value="${s.id}">${escapeHtml(s.navn)}</option>`).join('');
-  renderRosterListe();
-}
-
-$('#opprett-spiller-btn').addEventListener('click', async () => {
-  const navn = $('#ny-spiller-navn').value.trim();
-  if (!navn) return;
-  await repo.opprettSpiller({ navn, farge: initialFarge(navn) });
-  $('#ny-spiller-navn').value = '';
-  toast(`${navn} lagt til i master-registeret.`);
-  await lastSpillereTab();
-});
-
-$('#kvalifiseringsstatus-select').addEventListener('change', (e) => {
-  $('#wildcard-begrunnelse-felt').hidden = e.target.value !== 'wildcard';
-});
-
-$('#legg-til-roster-btn').addEventListener('click', async () => {
-  if (!state.event) { toast('Opprett et event først.', 'error'); return; }
-  if (!['draft', 'registration_open'].includes(state.event.status)) {
-    toast('Rosteret kan kun endres mens eventet er i Draft eller Registration Open.', 'error');
-    return;
-  }
-  const spillerId = $('#legg-til-roster-select').value;
-  if (!spillerId) return;
-  if (state.roster.length >= 16) { toast('Rosteret har allerede 16 spillere.', 'error'); return; }
-
-  const spiller = state.masterSpillere.find(s => s.id === spillerId);
-  const kilde = $('#kvalifiseringsstatus-select').value;
-  const begrunnelse = $('#wildcard-begrunnelse-input').value.trim() || null;
-
-  await repo.leggTilIRoster(state.event.id, spillerId, {
-    navn: spiller.navn, kvalifiseringsstatusKilde: kilde, wildcardBegrunnelse: begrunnelse,
-  });
-  toast(`${spiller.navn} lagt til i rosteret.`);
-  await lastSpillereTab();
-});
-
-const STATUS_KILDE_LABEL = {
-  returning_top8: 'Returning Top 8', qualifier_winner: 'Qualifier Winner',
-  wildcard: 'Wildcard', admin_invite: 'Admin Invite',
-};
-
-function renderRosterListe() {
-  $('#roster-teller').textContent = `(${state.roster.length}/16)`;
-  $('#roster-liste').innerHTML = state.roster.map(r => `
-    <div class="list-row">
-      <div class="player-chip">
-        <span class="initial-badge" style="background:${initialFarge(r.navn)}">${r.navn[0]}</span>
-        <span>${escapeHtml(r.navn)}</span>
-        ${r.puljeId ? `<span class="badge badge-muted">Pulje ${r.puljeId}</span>` : ''}
-        ${r.qualifiedForNext ? '<span class="badge badge-active">QUALIFIED FOR NEXT EVENT</span>' : ''}
-      </div>
-      <span class="badge badge-accent">${STATUS_KILDE_LABEL[r.kvalifiseringsstatusKilde] ?? r.kvalifiseringsstatusKilde}</span>
-    </div>
-  `).join('') || '<p class="muted">Ingen spillere i rosteret ennå.</p>';
-}
-
-$('#trekk-puljer-btn').addEventListener('click', async () => {
-  if (state.roster.length !== 16) { toast('Trenger nøyaktig 16 spillere i rosteret før puljetrekning.', 'error'); return; }
-  if (!bekreft('Trekke nye puljer? Dette overskriver eventuell eksisterende puljeinndeling.')) return;
-
-  const blandet = shuffle(state.roster.map(r => r.id));
-  const puljeNavn = ['A', 'B', 'C', 'D'];
-  const puljer = puljeNavn.map((navn, i) => ({
-    id: navn, navn: `Pulje ${navn}`, spillerIds: blandet.slice(i * 4, i * 4 + 4),
-  }));
-  await repo.lagrePuljer(state.event.id, puljer);
-  for (const p of puljer) {
-    for (const spillerId of p.spillerIds) {
-      await repo.flyttSpillerTilPulje(state.event.id, spillerId, p.id);
-    }
-  }
-  state.puljer = puljer;
-  toast('Puljer trukket.');
-  renderPuljerVisning();
-  await lastSpillereTab();
-});
-
-function renderPuljerVisning() {
-  $('#puljer-visning').innerHTML = state.puljer.map(p => `
-    <div class="card-inner" style="margin-bottom:8px;">
-      <h3>Pulje ${p.id}</h3>
-      ${p.spillerIds.map(id => {
-        const spiller = state.roster.find(r => r.id === id);
-        return `<span class="badge badge-muted" style="margin:2px;">${spiller ? escapeHtml(spiller.navn) : id}</span>`;
-      }).join('')}
-    </div>
-  `).join('') || '<p class="muted">Ingen puljer trukket ennå.</p>';
-}
-
-function shuffle(arr) {
-  const a = arr.slice();
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a;
-}
-
-// ----------------------------------------------------------------------------
-// KAMPER-fanen (puljespill)
-// ----------------------------------------------------------------------------
+// --- Kamper-fanen ---
 
 async function lastKamperTab() {
   if (!state.event) return;
-  const generert = state.event.kampoppsettGenerertOgValidert === true;
-  $('#generer-kampoppsett-btn').hidden = generert;
-  $('#regenerer-kampoppsett-btn').hidden = !generert;
-  $('#kampoppsett-status').textContent = generert
-    ? 'Kampoppsett er generert og validert.'
-    : 'Kampoppsett er ikke generert ennå.';
-
   $('#runde-tabs').innerHTML = [1, 2, 3, 4].map(r =>
     `<button class="tab-pill ${r === state.gjeldendeRundeVisning ? 'active' : ''}" data-runde="${r}">Runde ${r}</button>`
   ).join('');
@@ -446,37 +601,8 @@ async function lastKamperTab() {
       lastKamperTab();
     });
   });
-
-  if (generert) {
-    state.kamperIRunde = await repo.hentKamperForRunde(state.event.id, state.gjeldendeRundeVisning);
-    renderKamperListe();
-  } else {
-    $('#kamper-liste').innerHTML = '';
-  }
-}
-
-$('#generer-kampoppsett-btn').addEventListener('click', () => genererOgLagreKampoppsett());
-$('#regenerer-kampoppsett-btn').addEventListener('click', async () => {
-  if (!bekreft('Regenerere kampoppsettet? Alle registrerte puljespill-resultater slettes.')) return;
-  await repo.slettPuljespillKamper(state.event.id);
-  await genererOgLagreKampoppsett();
-});
-
-async function genererOgLagreKampoppsett() {
-  if (state.puljer.length !== 4) { toast('Trekk puljer først.', 'error'); return; }
-  const navnMap = Object.fromEntries(state.roster.map(r => [r.id, r.navn]));
-  try {
-    const kamper = genererKampoppsett({ puljer: state.puljer, disipliner: DISIPLINER, baner: BANER });
-    const medNavn = kamper.map(k => ({
-      ...k, spillerANavn: navnMap[k.spillerA] ?? k.spillerA, spillerBNavn: navnMap[k.spillerB] ?? k.spillerB,
-    }));
-    await repo.lagreKampoppsett(state.event.id, medNavn);
-    toast('Kampoppsett generert og lagret.');
-    await lastKamperTab();
-  } catch (e) {
-    console.error(e);
-    toast('Kunne ikke generere et gyldig kampoppsett: ' + e.message, 'error');
-  }
+  state.kamperIRunde = await repo.hentKamperForRunde(state.event.id, state.gjeldendeRundeVisning);
+  renderKamperListe();
 }
 
 function renderKamperListe() {
@@ -566,21 +692,28 @@ function bindKampKort(k) {
     const nyA = Number(window.prompt(`Nytt poengtall for ${navnMap[k.spillerA]}:`, k.poengA));
     const nyB = Number(window.prompt(`Nytt poengtall for ${navnMap[k.spillerB]}:`, k.poengB));
     if (Number.isNaN(nyA) || Number.isNaN(nyB) || nyA === nyB) { toast('Ugyldige poengsummer.', 'error'); return; }
-    await repo.registrerPuljeResultat(state.event.id, k, { poengA: nyA, poengB: nyB, erOverstyring: true, rosterNavnMap: navnMap });
+    await repo.overstyrPuljeResultat(state.event.id, k, { nyPoengA: nyA, nyPoengB: nyB, rosterNavnMap: navnMap });
     toast('Resultat overstyrt.');
     await lastKamperTab();
   });
 }
 
-// ----------------------------------------------------------------------------
-// SLUTTSPILL-fanen
-// ----------------------------------------------------------------------------
+// --- Sluttspill-fanen ---
+
+async function hentRangeringPerPulje(eventId) {
+  const leaderboards = await repo.hentAlleLeaderboards(eventId);
+  const rangeringPerPulje = {};
+  for (const lb of leaderboards) {
+    const kamperIPulje = await repo.hentAlleKamperIPulje(eventId, lb.puljeId);
+    rangeringPerPulje[lb.puljeId] = logikk.sorterSpillerStats(lb.spillerStats, kamperIPulje.filter(k => k.status === 'completed'));
+  }
+  return rangeringPerPulje;
+}
 
 async function lastSluttspillTab() {
   if (!state.event) return;
-  const leaderboards = await repo.hentAlleLeaderboards(state.event.id);
-  const rangeringPerPulje = Object.fromEntries(leaderboards.map(lb => [lb.puljeId, lb.rangering]));
-  const alleFireKlare = ['A', 'B', 'C', 'D'].every(p => (rangeringPerPulje[p]?.length ?? 0) >= 2);
+  const rangeringPerPulje = await hentRangeringPerPulje(state.event.id);
+  const alleFireKlare = PULJE_IDER.every(p => (rangeringPerPulje[p]?.length ?? 0) >= 2);
 
   if (alleFireKlare) {
     const kvalifiserte = logikk.bestemKvalifiserte(rangeringPerPulje);
@@ -593,7 +726,6 @@ async function lastSluttspillTab() {
   } else {
     $('#kvalifiserte-liste').innerHTML = '<p class="muted">Puljespillet må fullføres først.</p>';
   }
-
   renderSluttspillKontroll();
 }
 
@@ -602,45 +734,33 @@ function renderSluttspillKontroll() {
   $('#sluttspill-kontroll').innerHTML = `<p class="muted2 mono">Fase: ${fase}</p>`;
   $('#sluttspill-bracket').innerHTML = '';
   if (state.event.status !== 'playoffs') return;
-  if (fase === 'quarterfinal' || fase === 'semifinal' || fase === 'final') {
-    lastOgVisSerier(fase);
-  }
+  if (fase === 'quarterfinal' || fase === 'semifinal' || fase === 'final') lastOgVisSerier(fase);
 }
 
 async function settOppKvartfinaler() {
-  const leaderboards = await repo.hentAlleLeaderboards(state.event.id);
-  const rangeringPerPulje = Object.fromEntries(leaderboards.map(lb => [lb.puljeId, lb.rangering]));
+  const rangeringPerPulje = await hentRangeringPerPulje(state.event.id);
   const kvartfinaler = logikk.genererKvartfinaleOppsett(rangeringPerPulje);
 
   const kvalifiserte = logikk.bestemKvalifiserte(rangeringPerPulje);
-  for (const s of kvalifiserte) {
-    await repo.markerRosterKvalifisert(state.event.id, s.spillerId);
-  }
+  for (const s of kvalifiserte) await repo.markerRosterKvalifisert(state.event.id, s.spillerId);
 
   await repo.oppdaterEventFelt(state.event.id, { sluttspillFase: 'quarterfinal' });
   await repo.settAktivtEvent(state.event.id, state.event.gjeldendeRunde, 'quarterfinal');
   for (const qf of kvartfinaler) {
     await repo.leggTilSluttspillKamp(state.event.id, {
       runde: 5, fase: 'quarterfinal', serieId: qf.id, kampNrISerie: 1,
-      bane: BANER.pickleball[0], disiplin: DISIPLINER[0],
-      puljeId: null, spillerA: qf.spillerA, spillerB: qf.spillerB,
+      bane: BANER.pickleball[0], disiplin: DISIPLINER[0], puljeId: null,
+      spillerA: qf.spillerA, spillerB: qf.spillerB,
       spillerANavn: navnFraId(qf.spillerA), spillerBNavn: navnFraId(qf.spillerB),
     });
   }
   toast('Kvartfinaler satt opp.');
 }
 
-function navnFraId(id) {
-  return state.roster.find(r => r.id === id)?.navn ?? id;
-}
-
 async function lastOgVisSerier(fase) {
   const kamper = await repo.hentKamperForFase(state.event.id, fase);
   const serier = {};
-  for (const k of kamper) {
-    serier[k.serieId] = serier[k.serieId] || [];
-    serier[k.serieId].push(k);
-  }
+  for (const k of kamper) { serier[k.serieId] = serier[k.serieId] || []; serier[k.serieId].push(k); }
 
   let html = '';
   let alleFerdige = true;
@@ -673,27 +793,18 @@ async function lastOgVisSerier(fase) {
       const kort = btn.closest('.card-inner');
       const poengA = Number(kort.querySelector('.serie-poeng-a').value);
       const poengB = Number(kort.querySelector('.serie-poeng-b').value);
-      if (Number.isNaN(poengA) || Number.isNaN(poengB) || poengA === poengB) {
-        toast('Fyll inn to ulike poengsummer.', 'error'); return;
-      }
+      if (Number.isNaN(poengA) || Number.isNaN(poengB) || poengA === poengB) { toast('Fyll inn to ulike poengsummer.', 'error'); return; }
       const uspilt = kampListe.find(k => k.status !== 'completed');
       if (!uspilt) { toast('Alle kamper i serien er allerede spilt.', 'error'); return; }
-      await repo.registrerSluttspillResultat(state.event.id, uspilt.id, {
-        poengA, poengB, spillerA: forste.spillerA, spillerB: forste.spillerB,
-      });
+      await repo.registrerSluttspillResultat(state.event.id, uspilt.id, { poengA, poengB, spillerA: forste.spillerA, spillerB: forste.spillerB });
 
-      const oppdatertListe = [
-        ...kampListe.filter(k => k.id !== uspilt.id),
-        { ...uspilt, status: 'completed', poengA, poengB, vinnerId: poengA > poengB ? forste.spillerA : forste.spillerB },
-      ];
+      const oppdatertListe = [...kampListe.filter(k => k.id !== uspilt.id), { ...uspilt, status: 'completed', poengA, poengB, vinnerId: poengA > poengB ? forste.spillerA : forste.spillerB }];
       const nyStatus = logikk.beregnSerieStatus(forste.spillerA, forste.spillerB, oppdatertListe);
       if (!nyStatus.ferdig && nyStatus.trengerNesteOppgjor) {
         await repo.leggTilSluttspillKamp(state.event.id, {
-          runde: uspilt.runde, fase: uspilt.fase, serieId,
-          kampNrISerie: (uspilt.kampNrISerie ?? 1) + 1,
+          runde: uspilt.runde, fase: uspilt.fase, serieId, kampNrISerie: (uspilt.kampNrISerie ?? 1) + 1,
           bane: uspilt.bane, disiplin: uspilt.disiplin, puljeId: null,
-          spillerA: forste.spillerA, spillerB: forste.spillerB,
-          spillerANavn: forste.spillerANavn, spillerBNavn: forste.spillerBNavn,
+          spillerA: forste.spillerA, spillerB: forste.spillerB, spillerANavn: forste.spillerANavn, spillerBNavn: forste.spillerBNavn,
         });
       }
       toast('Resultat lagret.');
@@ -701,9 +812,7 @@ async function lastOgVisSerier(fase) {
     });
   });
 
-  if (alleFerdige && Object.keys(serier).length > 0) {
-    visGaVidereKnapp(fase, serier);
-  }
+  if (alleFerdige && Object.keys(serier).length > 0) visGaVidereKnapp(fase, serier);
 }
 
 function visGaVidereKnapp(fase, serier) {
@@ -716,8 +825,7 @@ function visGaVidereKnapp(fase, serier) {
     const vinnere = {};
     for (const [serieId, kampListe] of Object.entries(serier)) {
       const forste = kampListe[0];
-      const status = logikk.beregnSerieStatus(forste.spillerA, forste.spillerB, kampListe);
-      vinnere[serieId] = status.vinnerId;
+      vinnere[serieId] = logikk.beregnSerieStatus(forste.spillerA, forste.spillerB, kampListe).vinnerId;
     }
     const nesteFase = logikk.nesteSluttspillFase(fase);
     await repo.oppdaterEventFelt(state.event.id, { sluttspillFase: nesteFase });
@@ -729,8 +837,7 @@ function visGaVidereKnapp(fase, serier) {
         await repo.leggTilSluttspillKamp(state.event.id, {
           runde: 6, fase: 'semifinal', serieId: s.id, kampNrISerie: 1,
           bane: BANER.pickleball[0], disiplin: DISIPLINER[0], puljeId: null,
-          spillerA: s.spillerA, spillerB: s.spillerB,
-          spillerANavn: navnFraId(s.spillerA), spillerBNavn: navnFraId(s.spillerB),
+          spillerA: s.spillerA, spillerB: s.spillerB, spillerANavn: navnFraId(s.spillerA), spillerBNavn: navnFraId(s.spillerB),
         });
       }
     } else if (nesteFase === 'final') {
@@ -739,8 +846,7 @@ function visGaVidereKnapp(fase, serier) {
       await repo.leggTilSluttspillKamp(state.event.id, {
         runde: 7, fase: 'final', serieId: 'FINAL', kampNrISerie: 1,
         bane: BANER[DISIPLINER[0]][0], disiplin: DISIPLINER[0], puljeId: null,
-        spillerA: finale.spillerA, spillerB: finale.spillerB,
-        spillerANavn: navnFraId(finale.spillerA), spillerBNavn: navnFraId(finale.spillerB),
+        spillerA: finale.spillerA, spillerB: finale.spillerB, spillerANavn: navnFraId(finale.spillerA), spillerBNavn: navnFraId(finale.spillerB),
       });
     }
     toast(`Videre til ${nesteFase}.`);
@@ -749,19 +855,17 @@ function visGaVidereKnapp(fase, serier) {
   $('#sluttspill-bracket').appendChild(knapp);
 }
 
-// ----------------------------------------------------------------------------
-// LEADERBOARD-fanen
-// ----------------------------------------------------------------------------
+// --- Leaderboard-fanen ---
 
 async function lastLeaderboardTab() {
   if (!state.event) return;
-  const leaderboards = await repo.hentAlleLeaderboards(state.event.id);
-  $('#leaderboard-visning').innerHTML = leaderboards.map(lb => `
+  const rangeringPerPulje = await hentRangeringPerPulje(state.event.id);
+  $('#leaderboard-visning').innerHTML = Object.entries(rangeringPerPulje).map(([puljeId, rangering]) => `
     <div class="card">
-      <h2>Pulje ${lb.puljeId}</h2>
-      ${lb.rangering.map((r, i) => `
+      <h2>Pulje ${puljeId}</h2>
+      ${rangering.map(r => `
         <div class="list-row">
-          <span>#${i + 1} ${escapeHtml(r.navn)} ${i < 2 ? '<span class="badge badge-active">QUALIFIED</span>' : ''}</span>
+          <span>#${r.rank} ${escapeHtml(r.navn)} ${r.rank <= 2 ? '<span class="badge badge-active">QUALIFIED</span>' : ''}</span>
           <span class="mono muted2">${r.seire}S ${r.tap}T · ${r.poeng}p · ${r.poengforskjell > 0 ? '+' : ''}${r.poengforskjell}</span>
         </div>
       `).join('')}
@@ -769,9 +873,7 @@ async function lastLeaderboardTab() {
   `).join('') || '<p class="muted">Ingen leaderboard-data ennå — registrer et kampresultat først.</p>';
 }
 
-// ----------------------------------------------------------------------------
-// HALL OF FAME-fanen
-// ----------------------------------------------------------------------------
+// --- Hall of Fame-fanen ---
 
 async function lastHallOfFameTab() {
   state.champions = await repo.hentChampions();
@@ -800,19 +902,9 @@ $('#registrer-champion-btn').addEventListener('click', async () => {
   await repo.registrerChampion(record);
 
   const nyeStats = logikk.oppdaterSpillerStats(spiller.stats, {
-    kampSeire: 0, naddeFinale: true, vantEvent: true,
-    eventId: state.event.id, plassering: '1', dato: state.event.dato ?? new Date().toISOString(),
+    kampSeire: 0, naddeFinale: true, vantEvent: true, eventId: state.event.id, plassering: '1', dato: state.event.dato ?? new Date().toISOString(),
   });
   await repo.oppdaterSpiller(spillerId, { stats: nyeStats });
-
   toast('Champion registrert i Hall of Fame.');
   await lastHallOfFameTab();
 });
-
-// ----------------------------------------------------------------------------
-
-function escapeHtml(str) {
-  return String(str ?? '').replace(/[&<>"']/g, (c) => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
-  }[c]));
-}

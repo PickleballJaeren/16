@@ -154,20 +154,26 @@ eventet*, uten å røre master-spillerdokumentet.
 
 ### Subcollection: `leaderboard/{puljeId}`
 
-**Ferdig-sortert, kappet** — dette er dokumentet UI faktisk leser. Skrives i
-samme batch/transaksjon som kampresultatet lagres, ikke regnet ut on-demand.
+**Rå, atomisk oppdaterte tellere — IKKE en ferdig-sortert liste.** Endret fra
+opprinnelig design: den sorterte rangeringen ble tidligere regnet ut og
+skrevet i sin helhet ved hvert kampresultat, men det krevde å lese puljens
+øvrige kamper først — et race-vindu når flere admin-enheter skriver samtidig
+(appen deles nå mellom 2-3 admin-er). Løsningen: hver spillers tellere
+oppdateres med Firestores atomiske `increment()` (aldri lest-og-skrevet-på-
+nytt), og selve SORTERINGEN gjøres ved lesing, av
+`eventlogikk.sorterSpillerStats()` — lesing har ikke noe race condition-
+problem, kun skriving hadde det.
 
 ```jsonc
 {
   puljeId: string,
   oppdatert: Timestamp,
-  rangering: [   // maks 4, pre-sortert
-    {
-      spillerId: string, navn: string,
-      seire: number, tap: number, poeng: number,
-      poengforskjell: number, kvalifisert: boolean
+  spillerStats: {   // spillerId -> rå tellere, oppdatert med increment()
+    [spillerId]: {
+      navn: string,
+      seire: number, tap: number, poeng: number, poengforskjell: number
     }
-  ]
+  }
 }
 ```
 
