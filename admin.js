@@ -341,10 +341,7 @@ function renderIkkeKlarSteg(stegId, melding) {
 }
 
 function renderSteg2() {
-  const select = $('#legg-til-roster-select');
-  select.innerHTML = '<option value="">Velg spiller …</option>' +
-    state.masterSpillere.filter(s => !state.roster.some(r => r.id === s.id))
-      .map(s => `<option value="${s.id}">${escapeHtml(s.navn)}</option>`).join('');
+  renderTilgjengeligeSpillereListe();
 
   $('#roster-teller').textContent = `(${state.roster.length}/16)`;
 
@@ -367,35 +364,72 @@ function renderSteg2() {
   $$('#roster-kategorier [data-fjern]').forEach(btn => {
     btn.addEventListener('click', async () => {
       if (!bekreft(`Fjerne ${navnFraId(btn.dataset.fjern)} fra rosteret?`)) return;
-      await repo.fjernFraRoster(state.event.id, btn.dataset.fjern);
-      toast('Fjernet fra roster.');
+      btn.disabled = true;
+      try {
+        await repo.fjernFraRoster(state.event.id, btn.dataset.fjern);
+        toast('Fjernet fra roster.');
+      } catch (e) {
+        console.error('Feil ved fjernFraRoster:', e);
+        toast('Kunne ikke fjerne spilleren: ' + e.message, 'error');
+        btn.disabled = false;
+      }
     });
   });
 
   renderMasterSpillerListe();
 }
 
+/**
+ * Klikkbar liste over master-spillere som IKKE allerede er i rosteret.
+ * Ett klikk legger spilleren til med umiddelbart med statusen valgt i
+ * #kvalifiseringsstatus-select -- ingen egen "Legg til"-knapp trengs, og
+ * flere spillere kan legges til raskt etter hverandre. Listen tømmer seg
+ * selv automatisk etter hvert som roster-lytteren (lyttRoster) fanger opp
+ * endringen og trigger et re-render.
+ */
+function renderTilgjengeligeSpillereListe() {
+  const container = $('#tilgjengelige-spillere-liste');
+  if (!container) return;
+
+  const tilgjengelige = state.masterSpillere.filter(s => !state.roster.some(r => r.id === s.id));
+
+  if (tilgjengelige.length === 0) {
+    container.innerHTML = '<p class="muted" style="font-size:13px;">Alle spillere i klubbregisteret er allerede i rosteret.</p>';
+    return;
+  }
+
+  container.innerHTML = tilgjengelige.map(s =>
+    `<button type="button" class="spiller-velg-chip" data-legg-til="${s.id}">+ ${escapeHtml(s.navn)}</button>`
+  ).join('');
+
+  $$('#tilgjengelige-spillere-liste [data-legg-til]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (state.roster.length >= 16) { toast('Rosteret har allerede 16 spillere.', 'error'); return; }
+      const spillerId = btn.dataset.leggTil;
+      const spiller = state.masterSpillere.find(s => s.id === spillerId);
+      if (!spiller) return;
+
+      const kilde = $('#kvalifiseringsstatus-select').value;
+      const begrunnelse = $('#wildcard-begrunnelse-input').value.trim() || null;
+
+      btn.disabled = true; // hindre dobbelt-klikk mens skrivingen pågår
+      try {
+        await repo.leggTilIRoster(state.event.id, spillerId, { navn: spiller.navn, kvalifiseringsstatusKilde: kilde, wildcardBegrunnelse: begrunnelse });
+        toast(`${spiller.navn} lagt til.`);
+        // Ingen manuell re-render nødvendig -- lyttRoster fanger opp
+        // endringen og kaller renderWizardSteg() automatisk, som fjerner
+        // denne knappen fra listen siden spilleren nå er i state.roster.
+      } catch (e) {
+        console.error('Feil ved leggTilIRoster:', e);
+        toast('Kunne ikke legge til ' + spiller.navn + ': ' + e.message, 'error');
+        btn.disabled = false;
+      }
+    });
+  });
+}
+
 $('#kvalifiseringsstatus-select').addEventListener('change', (e) => {
   $('#wildcard-begrunnelse-felt').hidden = e.target.value !== 'wildcard';
-});
-
-$('#legg-til-roster-btn').addEventListener('click', async () => {
-  if (!state.event) { toast('Opprett et event først.', 'error'); return; }
-  const spillerId = $('#legg-til-roster-select').value;
-  if (!spillerId) { toast('Velg en spiller først.', 'error'); return; }
-  if (state.roster.length >= 16) { toast('Rosteret har allerede 16 spillere.', 'error'); return; }
-  const spiller = state.masterSpillere.find(s => s.id === spillerId);
-  if (!spiller) { toast('Fant ikke spilleren -- prøv å laste siden på nytt.', 'error'); return; }
-  const kilde = $('#kvalifiseringsstatus-select').value;
-  const begrunnelse = $('#wildcard-begrunnelse-input').value.trim() || null;
-  try {
-    await repo.leggTilIRoster(state.event.id, spillerId, { navn: spiller.navn, kvalifiseringsstatusKilde: kilde, wildcardBegrunnelse: begrunnelse });
-    toast(`${spiller.navn} lagt til.`);
-    await lastMasterSpillereOgRenderSteg2();
-  } catch (e) {
-    console.error('Feil ved leggTilIRoster:', e);
-    toast('Kunne ikke legge til spilleren: ' + e.message, 'error');
-  }
 });
 
 $('#opprett-spiller-btn').addEventListener('click', async () => {

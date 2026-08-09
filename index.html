@@ -22,6 +22,9 @@
   .kategori-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
   .teller-badge { font-family:'DM Mono',monospace; font-size:12px; padding:3px 10px; border-radius:999px; background:rgba(59,130,246,0.15); color:#3b82f6; }
   .spiller-chip { display:inline-flex; align-items:center; gap:6px; background:var(--navy3); color:var(--white); font-size:12px; padding:5px 10px; border-radius:999px; margin:0 6px 6px 0; }
+  .spiller-velg-chip { display:inline-flex; align-items:center; gap:6px; background:var(--navy3); border:1px solid var(--border2); color:var(--white); font-size:13px; padding:8px 14px; border-radius:999px; margin:0 6px 6px 0; cursor:pointer; font-family:'DM Sans',sans-serif; }
+  .spiller-velg-chip:active { transform:scale(0.97); }
+  .spiller-velg-chip:disabled { opacity:0.4; cursor:default; }
   .spiller-chip button { background:none; border:none; color:var(--muted2); cursor:pointer; font-size:13px; padding:0; }
   .pulje-flyt-kort { margin-bottom:10px; }
   .pulje-spiller-rad { display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid var(--border); }
@@ -100,11 +103,7 @@
       <div class="card">
         <h2>Spillere <span class="muted2 mono" id="roster-teller">(0/16)</span></h2>
         <div class="field">
-          <label for="legg-til-roster-select">Legg til spiller</label>
-          <select id="legg-til-roster-select"></select>
-        </div>
-        <div class="field">
-          <label for="kvalifiseringsstatus-select">Kvalifiseringsstatus</label>
+          <label for="kvalifiseringsstatus-select">Kvalifiseringsstatus (gjelder spillere du trykker på under)</label>
           <select id="kvalifiseringsstatus-select">
             <option value="returning_top8">Returning Top 8</option>
             <option value="qualifier_winner">Qualifier Winner</option>
@@ -116,7 +115,10 @@
           <label for="wildcard-begrunnelse-input">Begrunnelse (wildcard)</label>
           <input id="wildcard-begrunnelse-input" type="text" placeholder="Valgfritt">
         </div>
-        <button id="legg-til-roster-btn" class="btn btn-outline">Legg til</button>
+        <p class="muted" style="font-size:12px; margin-bottom:10px;">
+          Trykk på én eller flere spillere under for å legge dem til rosteret med statusen valgt over.
+        </p>
+        <div id="tilgjengelige-spillere-liste"></div>
       </div>
       <div id="roster-kategorier"></div>
       <div class="card">
