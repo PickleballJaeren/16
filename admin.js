@@ -1018,19 +1018,27 @@ async function lastOgVisSerier(fase) {
       if (Number.isNaN(poengA) || Number.isNaN(poengB) || poengA === poengB) { toast('Fyll inn to ulike poengsummer.', 'error'); return; }
       const uspilt = kampListe.find(k => k.status !== 'completed');
       if (!uspilt) { toast('Alle kamper i serien er allerede spilt.', 'error'); return; }
-      await repo.registrerSluttspillResultat(state.event.id, uspilt.id, { poengA, poengB, spillerA: forste.spillerA, spillerB: forste.spillerB });
 
-      const oppdatertListe = [...kampListe.filter(k => k.id !== uspilt.id), { ...uspilt, status: 'completed', poengA, poengB, vinnerId: poengA > poengB ? forste.spillerA : forste.spillerB }];
-      const nyStatus = logikk.beregnSerieStatus(forste.spillerA, forste.spillerB, oppdatertListe);
-      if (!nyStatus.ferdig && nyStatus.trengerNesteOppgjor) {
-        await repo.leggTilSluttspillKamp(state.event.id, {
-          runde: uspilt.runde, fase: uspilt.fase, serieId, kampNrISerie: (uspilt.kampNrISerie ?? 1) + 1,
-          bane: uspilt.bane, disiplin: uspilt.disiplin, puljeId: null,
-          spillerA: forste.spillerA, spillerB: forste.spillerB, spillerANavn: forste.spillerANavn, spillerBNavn: forste.spillerBNavn,
-        });
+      btn.disabled = true;
+      try {
+        await repo.registrerSluttspillResultat(state.event.id, uspilt.id, { poengA, poengB, spillerA: forste.spillerA, spillerB: forste.spillerB });
+
+        const oppdatertListe = [...kampListe.filter(k => k.id !== uspilt.id), { ...uspilt, status: 'completed', poengA, poengB, vinnerId: poengA > poengB ? forste.spillerA : forste.spillerB }];
+        const nyStatus = logikk.beregnSerieStatus(forste.spillerA, forste.spillerB, oppdatertListe);
+        if (!nyStatus.ferdig && nyStatus.trengerNesteOppgjor) {
+          await repo.leggTilSluttspillKamp(state.event.id, {
+            runde: uspilt.runde, fase: uspilt.fase, serieId, kampNrISerie: (uspilt.kampNrISerie ?? 1) + 1,
+            bane: uspilt.bane, disiplin: uspilt.disiplin, puljeId: null,
+            spillerA: forste.spillerA, spillerB: forste.spillerB, spillerANavn: forste.spillerANavn, spillerBNavn: forste.spillerBNavn,
+          });
+        }
+        toast('Resultat lagret.');
+        await lastOgVisSerier(fase);
+      } catch (e) {
+        console.error('Feil ved lagring av serieresultat:', e);
+        toast('Kunne ikke lagre resultatet: ' + e.message, 'error');
+        btn.disabled = false;
       }
-      toast('Resultat lagret.');
-      await lastOgVisSerier(fase);
     });
   });
 
@@ -1044,35 +1052,42 @@ function visGaVidereKnapp(fase, serier) {
   knapp.textContent = `Gå videre til ${logikk.nesteSluttspillFase(fase)}`;
   knapp.addEventListener('click', async () => {
     if (!bekreft('Alle kamper i denne fasen er ferdige. Gå videre?')) return;
-    const vinnere = {};
-    for (const [serieId, kampListe] of Object.entries(serier)) {
-      const forste = kampListe[0];
-      vinnere[serieId] = logikk.beregnSerieStatus(forste.spillerA, forste.spillerB, kampListe).vinnerId;
-    }
-    const nesteFase = logikk.nesteSluttspillFase(fase);
-    await repo.oppdaterEventFelt(state.event.id, { sluttspillFase: nesteFase });
-    await repo.settAktivtEvent(state.event.id, state.event.gjeldendeRunde, nesteFase);
+    knapp.disabled = true;
+    try {
+      const vinnere = {};
+      for (const [serieId, kampListe] of Object.entries(serier)) {
+        const forste = kampListe[0];
+        vinnere[serieId] = logikk.beregnSerieStatus(forste.spillerA, forste.spillerB, kampListe).vinnerId;
+      }
+      const nesteFase = logikk.nesteSluttspillFase(fase);
+      await repo.oppdaterEventFelt(state.event.id, { sluttspillFase: nesteFase });
+      await repo.settAktivtEvent(state.event.id, state.event.gjeldendeRunde, nesteFase);
 
-    if (nesteFase === 'semifinal') {
-      const semis = logikk.genererSemifinaleOppsett(vinnere);
-      for (const s of semis) {
+      if (nesteFase === 'semifinal') {
+        const semis = logikk.genererSemifinaleOppsett(vinnere);
+        for (const s of semis) {
+          await repo.leggTilSluttspillKamp(state.event.id, {
+            runde: 6, fase: 'semifinal', serieId: s.id, kampNrISerie: 1,
+            bane: BANER.pickleball[0], disiplin: DISIPLINER[0], puljeId: null,
+            spillerA: s.spillerA, spillerB: s.spillerB, spillerANavn: navnFraId(s.spillerA), spillerBNavn: navnFraId(s.spillerB),
+          });
+        }
+      } else if (nesteFase === 'final') {
+        const finale = logikk.genererFinaleOppsett(vinnere, DISIPLINER);
+        await repo.lagreSluttspillFase(state.event.id, 'final', finale);
         await repo.leggTilSluttspillKamp(state.event.id, {
-          runde: 6, fase: 'semifinal', serieId: s.id, kampNrISerie: 1,
-          bane: BANER.pickleball[0], disiplin: DISIPLINER[0], puljeId: null,
-          spillerA: s.spillerA, spillerB: s.spillerB, spillerANavn: navnFraId(s.spillerA), spillerBNavn: navnFraId(s.spillerB),
+          runde: 7, fase: 'final', serieId: 'FINAL', kampNrISerie: 1,
+          bane: BANER[DISIPLINER[0]][0], disiplin: DISIPLINER[0], puljeId: null,
+          spillerA: finale.spillerA, spillerB: finale.spillerB, spillerANavn: navnFraId(finale.spillerA), spillerBNavn: navnFraId(finale.spillerB),
         });
       }
-    } else if (nesteFase === 'final') {
-      const finale = logikk.genererFinaleOppsett(vinnere, DISIPLINER);
-      await repo.lagreSluttspillFase(state.event.id, 'final', finale);
-      await repo.leggTilSluttspillKamp(state.event.id, {
-        runde: 7, fase: 'final', serieId: 'FINAL', kampNrISerie: 1,
-        bane: BANER[DISIPLINER[0]][0], disiplin: DISIPLINER[0], puljeId: null,
-        spillerA: finale.spillerA, spillerB: finale.spillerB, spillerANavn: navnFraId(finale.spillerA), spillerBNavn: navnFraId(finale.spillerB),
-      });
+      toast(`Videre til ${nesteFase}.`);
+      await lastSluttspillTab();
+    } catch (e) {
+      console.error('Feil ved overgang til neste sluttspillfase:', e);
+      toast('Kunne ikke gå videre: ' + e.message, 'error');
+      knapp.disabled = false;
     }
-    toast(`Videre til ${nesteFase}.`);
-    await lastSluttspillTab();
   });
   $('#sluttspill-bracket').appendChild(knapp);
 }

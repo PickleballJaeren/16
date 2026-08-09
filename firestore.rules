@@ -251,9 +251,12 @@ service cloud.firestore {
 
       match /sluttspill/{fase} {
         allow read: if true;
+        // Matcher det faktiske dokumentskjemaet fra eventlogikk.genererFinaleOppsett()
+        // ({ id, spillerA, spillerB, disiplinRekkefolge }) -- IKKE datamodell.md sin
+        // opprinnelige spesifikasjon (kampIds/bestAvSeire), som aldri ble implementert.
         allow create, update: if
-          request.resource.data.kampIds is list
-          && request.resource.data.bestAvSeire == 2;
+          seksten_isString(request.resource.data.spillerA)
+          && seksten_isString(request.resource.data.spillerB);
         allow delete: if true;
       }
     }
