@@ -767,9 +767,18 @@ async function gaTilStatus(tilStatus) {
   const sjekk = logikk.sjekkForutsetninger(tilStatus, kontekst);
   if (!sjekk.tillatt) { toast(sjekk.arsaker.join(' '), 'error'); return; }
   if (!bekreft(`Gå videre til "${logikk.STATUS_VISNINGSNAVN[tilStatus]}"?`)) return;
-  await repo.oppdaterEventStatus(state.event.id, tilStatus);
-  toast('Status oppdatert.');
-  if (tilStatus === 'playoffs') await settOppKvartfinaler();
+  try {
+    await repo.oppdaterEventStatus(state.event.id, tilStatus);
+    toast('Status oppdatert.');
+    if (tilStatus === 'playoffs') await settOppKvartfinaler();
+  } catch (e) {
+    console.error('Feil ved overgang til ' + tilStatus + ':', e);
+    toast(
+      'Noe feilet under overgangen: ' + e.message +
+      (tilStatus === 'playoffs' ? ' -- statusen kan ha blitt endret selv om kvartfinalene ikke ble satt opp. Bruk "Sett opp kvartfinaler på nytt"-knappen i Sluttspill-fanen.' : ''),
+      'error'
+    );
+  }
 }
 
 // --- Kamper-fanen ---
@@ -901,27 +910,50 @@ function renderSluttspillKontroll() {
   $('#sluttspill-kontroll').innerHTML = `<p class="muted2 mono">Fase: ${fase}</p>`;
   $('#sluttspill-bracket').innerHTML = '';
   if (state.event.status !== 'playoffs') return;
+
+  if (fase === 'none' || !fase) {
+    const btn = document.createElement('button');
+    btn.className = 'btn btn-primary btn-small';
+    btn.textContent = 'Sett opp kvartfinaler på nytt';
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      try {
+        await settOppKvartfinaler();
+      } finally {
+        btn.disabled = false;
+      }
+    });
+    $('#sluttspill-kontroll').appendChild(btn);
+    return;
+  }
+
   if (fase === 'quarterfinal' || fase === 'semifinal' || fase === 'final') lastOgVisSerier(fase);
 }
 
 async function settOppKvartfinaler() {
-  const rangeringPerPulje = await hentRangeringPerPulje(state.event.id);
-  const kvartfinaler = logikk.genererKvartfinaleOppsett(rangeringPerPulje);
+  try {
+    const rangeringPerPulje = await hentRangeringPerPulje(state.event.id);
+    const kvartfinaler = logikk.genererKvartfinaleOppsett(rangeringPerPulje);
 
-  const kvalifiserte = logikk.bestemKvalifiserte(rangeringPerPulje);
-  for (const s of kvalifiserte) await repo.markerRosterKvalifisert(state.event.id, s.spillerId);
+    const kvalifiserte = logikk.bestemKvalifiserte(rangeringPerPulje);
+    for (const s of kvalifiserte) await repo.markerRosterKvalifisert(state.event.id, s.spillerId);
 
-  await repo.oppdaterEventFelt(state.event.id, { sluttspillFase: 'quarterfinal' });
-  await repo.settAktivtEvent(state.event.id, state.event.gjeldendeRunde, 'quarterfinal');
-  for (const qf of kvartfinaler) {
-    await repo.leggTilSluttspillKamp(state.event.id, {
-      runde: 5, fase: 'quarterfinal', serieId: qf.id, kampNrISerie: 1,
-      bane: BANER.pickleball[0], disiplin: DISIPLINER[0], puljeId: null,
-      spillerA: qf.spillerA, spillerB: qf.spillerB,
-      spillerANavn: navnFraId(qf.spillerA), spillerBNavn: navnFraId(qf.spillerB),
-    });
+    await repo.oppdaterEventFelt(state.event.id, { sluttspillFase: 'quarterfinal' });
+    await repo.settAktivtEvent(state.event.id, state.event.gjeldendeRunde, 'quarterfinal');
+    for (const qf of kvartfinaler) {
+      await repo.leggTilSluttspillKamp(state.event.id, {
+        runde: 5, fase: 'quarterfinal', serieId: qf.id, kampNrISerie: 1,
+        bane: BANER.pickleball[0], disiplin: DISIPLINER[0], puljeId: null,
+        spillerA: qf.spillerA, spillerB: qf.spillerB,
+        spillerANavn: navnFraId(qf.spillerA), spillerBNavn: navnFraId(qf.spillerB),
+      });
+    }
+    toast('Kvartfinaler satt opp.');
+    await lastSluttspillTab();
+  } catch (e) {
+    console.error('Feil ved oppsett av kvartfinaler:', e);
+    toast('Kunne ikke sette opp kvartfinaler: ' + e.message, 'error');
   }
-  toast('Kvartfinaler satt opp.');
 }
 
 async function lastOgVisSerier(fase) {
