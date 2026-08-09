@@ -382,14 +382,20 @@ $('#kvalifiseringsstatus-select').addEventListener('change', (e) => {
 $('#legg-til-roster-btn').addEventListener('click', async () => {
   if (!state.event) { toast('Opprett et event først.', 'error'); return; }
   const spillerId = $('#legg-til-roster-select').value;
-  if (!spillerId) return;
+  if (!spillerId) { toast('Velg en spiller først.', 'error'); return; }
   if (state.roster.length >= 16) { toast('Rosteret har allerede 16 spillere.', 'error'); return; }
   const spiller = state.masterSpillere.find(s => s.id === spillerId);
+  if (!spiller) { toast('Fant ikke spilleren -- prøv å laste siden på nytt.', 'error'); return; }
   const kilde = $('#kvalifiseringsstatus-select').value;
   const begrunnelse = $('#wildcard-begrunnelse-input').value.trim() || null;
-  await repo.leggTilIRoster(state.event.id, spillerId, { navn: spiller.navn, kvalifiseringsstatusKilde: kilde, wildcardBegrunnelse: begrunnelse });
-  toast(`${spiller.navn} lagt til.`);
-  await lastMasterSpillereOgRenderSteg2();
+  try {
+    await repo.leggTilIRoster(state.event.id, spillerId, { navn: spiller.navn, kvalifiseringsstatusKilde: kilde, wildcardBegrunnelse: begrunnelse });
+    toast(`${spiller.navn} lagt til.`);
+    await lastMasterSpillereOgRenderSteg2();
+  } catch (e) {
+    console.error('Feil ved leggTilIRoster:', e);
+    toast('Kunne ikke legge til spilleren: ' + e.message, 'error');
+  }
 });
 
 $('#opprett-spiller-btn').addEventListener('click', async () => {
