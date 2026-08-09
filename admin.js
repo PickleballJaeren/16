@@ -704,7 +704,7 @@ function visTab(navn) {
 
 // --- Event-fanen (i det løpende dashbordet) ---
 
-function renderEventTab() {
+async function renderEventTab() {
   const event = state.event;
   $('#event-navn-visning-2').textContent = event.navn;
   $('#event-nummer-visning-2').textContent = `Event #${event.eventNummer}`;
@@ -721,6 +721,21 @@ function renderEventTab() {
   const forrige = logikk.STATUS_REKKEFOLGE[idx - 1];
 
   if (neste) {
+    // Hent FERSK data før vi avgjør om overgangsknappen skal være aktiv.
+    // Tidligere brukte denne alleKamperCache/finaleSerieCache, som kun ble
+    // fylt INNE i gaTilStatus() -- altså ETTER at knappen ble klikket. Ved
+    // første visning var cachen derfor alltid tom, og knappen fremstod
+    // feilaktig deaktivert ("Forventet 24 puljespill-kamper, fant 0") selv
+    // om puljespillet faktisk var ferdigspilt.
+    if (neste === 'playoffs') {
+      state.alleKamperCache = await repo.hentKamperForFase(event.id, 'pool');
+    }
+    if (neste === 'completed') {
+      const finaleKamper = await repo.hentKamperForFase(event.id, 'final');
+      const finaleDoc = await repo.hentSluttspillFase(event.id, 'final');
+      state.finaleSerieCache = finaleDoc ? logikk.beregnSerieStatus(finaleDoc.spillerA, finaleDoc.spillerB, finaleKamper) : null;
+    }
+
     const kontekst = byggStatusKontekst(neste);
     const sjekk = logikk.sjekkForutsetninger(neste, kontekst);
     const btn = document.createElement('button');
@@ -911,23 +926,28 @@ function renderSluttspillKontroll() {
   $('#sluttspill-bracket').innerHTML = '';
   if (state.event.status !== 'playoffs') return;
 
-  if (fase === 'none' || !fase) {
-    const btn = document.createElement('button');
-    btn.className = 'btn btn-primary btn-small';
-    btn.textContent = 'Sett opp kvartfinaler på nytt';
-    btn.addEventListener('click', async () => {
-      btn.disabled = true;
-      try {
-        await settOppKvartfinaler();
-      } finally {
-        btn.disabled = false;
-      }
-    });
-    $('#sluttspill-kontroll').appendChild(btn);
-    return;
-  }
+  if (fase === 'quarterfinal' || fase === 'semifinal' || fase === 'final') { lastOgVisSerier(fase); return; }
 
-  if (fase === 'quarterfinal' || fase === 'semifinal' || fase === 'final') lastOgVisSerier(fase);
+  leggTilRetryKnapp('Sett opp kvartfinaler på nytt', settOppKvartfinaler);
+}
+
+/** Legges til i #sluttspill-kontroll -- brukes både når fasen aldri kom i
+ *  gang (fase === "none") og av lastOgVisSerier() når fasen ER satt, men
+ *  det viser seg at ingen kamper faktisk ble skrevet (se feilsituasjonen
+ *  beskrevet over settOppKvartfinaler). */
+function leggTilRetryKnapp(tekst, handling) {
+  const btn = document.createElement('button');
+  btn.className = 'btn btn-primary btn-small';
+  btn.textContent = tekst;
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    try {
+      await handling();
+    } finally {
+      btn.disabled = false;
+    }
+  });
+  $('#sluttspill-kontroll').appendChild(btn);
 }
 
 async function settOppKvartfinaler() {
@@ -983,6 +1003,9 @@ async function lastOgVisSerier(fase) {
     `;
   }
   $('#sluttspill-bracket').innerHTML = html || '<p class="muted">Ingen kamper i denne fasen ennå.</p>';
+  if (kamper.length === 0 && fase === 'quarterfinal') {
+    leggTilRetryKnapp('Sett opp kvartfinaler på nytt', settOppKvartfinaler);
+  }
 
   $$('.serie-lagre-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
