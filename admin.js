@@ -815,12 +815,6 @@ function kampKortHtml(k, navnMap) {
         <span class="badge badge-active">Ferdig${k.overstyrtAvAdmin ? ' (overstyrt)' : ''}</span>
         <button class="btn btn-outline btn-small overstyr-btn" style="margin-top:8px;">Overstyr resultat</button>
       ` : `
-        <div class="btn-row" style="margin-bottom:8px;">
-          <button class="btn btn-outline btn-small timer-start">Start timer</button>
-          <button class="btn btn-outline btn-small timer-pause">Pause</button>
-          <button class="btn btn-outline btn-small timer-reset">Reset</button>
-          <button class="btn btn-outline btn-small sudden-death-btn">Sudden Death</button>
-        </div>
         <div class="grid-2">
           <input type="number" class="poeng-a" placeholder="Poeng ${navnMap[k.spillerA] ?? ''}">
           <input type="number" class="poeng-b" placeholder="Poeng ${navnMap[k.spillerB] ?? ''}">
@@ -839,21 +833,6 @@ function bindKampKort(k) {
   const kort = document.querySelector(`[data-kamp-id="${k.id}"]`);
   if (!kort) return;
   const navnMap = Object.fromEntries(state.roster.map(r => [r.id, r.navn]));
-
-  kort.querySelector('.timer-start')?.addEventListener('click', () => {
-    const gjor = k.timer?.status === 'paused'
-      ? repo.gjenopptaTimer(state.event.id, k.id, k.timer.gjenstaendeSekunder ?? KAMPVARIGHET_PULJESPILL_MIN * 60)
-      : repo.startTimer(state.event.id, k.id, KAMPVARIGHET_PULJESPILL_MIN * 60);
-    gjor.then(() => toast(k.timer?.status === 'paused' ? 'Timer gjenopptatt.' : 'Timer startet.'));
-  });
-  kort.querySelector('.timer-pause')?.addEventListener('click', () =>
-    repo.pauseTimer(state.event.id, k.id, k.timer?.gjenstaendeSekunder ?? 0).then(() => toast('Timer pauset.')));
-  kort.querySelector('.timer-reset')?.addEventListener('click', () =>
-    repo.resetTimer(state.event.id, k.id, KAMPVARIGHET_PULJESPILL_MIN * 60).then(() => toast('Timer nullstilt.')));
-  kort.querySelector('.sudden-death-btn')?.addEventListener('click', () => {
-    if (!bekreft('Marker denne kampen som Sudden Death?')) return;
-    repo.settSuddenDeath(state.event.id, k.id).then(() => toast('Sudden Death markert.'));
-  });
 
   kort.querySelector('.endre-bane')?.addEventListener('change', (e) => {
     if (!bekreft('Endre bane for denne kampen? Dette overstyrer det genererte oppsettet.')) { lastKamperTab(); return; }
