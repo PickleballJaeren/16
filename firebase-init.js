@@ -13,7 +13,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/fireba
 import {
   initializeFirestore,
   persistentLocalCache,
-  persistentSingleTabManager,
+  persistentMultiTabManager,
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -29,7 +29,10 @@ export const app = initializeApp(firebaseConfig);
 
 // persistentLocalCache gir Firestores innebygde offline-kø for skrive-
 // operasjoner: skriv gjort uten nett lagres lokalt og synkroniseres
-// automatisk når tilkoblingen er tilbake.
+// automatisk når tilkoblingen er tilbake. persistentMultiTabManager (ikke
+// singel-fane-varianten) gjør at appen kan stå åpen i flere faner/vinduer
+// samtidig på samme enhet uten "failed to obtain exclusive access"-feil —
+// viktig siden appen nå deles mellom 2-3 admin-enheter.
 export const db = initializeFirestore(app, {
-  localCache: persistentLocalCache({ tabManager: persistentSingleTabManager() }),
+  localCache: persistentLocalCache({ tabManager: persistentMultiTabManager() }),
 });
